@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: lab-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/lab_db?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf-8&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=3434
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - lab-network
+
+  frontend:
+    build: ./frontend
+    container_name: lab-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - lab-network
+
+  db:
+    image: mysql:8.0
+    container_name: lab-db
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=3434
+      - MYSQL_DATABASE=lab_db
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - lab-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p3434"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  lab-network:
+    driver: bridge
+
+volumes:
+  db_data:
