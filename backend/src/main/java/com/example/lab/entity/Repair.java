@@ -35,6 +35,9 @@ public class Repair {
     @DecimalMin(value = "0", message = "维修费用不能为负数")
     private BigDecimal cost;
 
+    @Size(max = 1000, message = "维修结论长度不能超过 1000 个字符")
+    private String repairConclusion;
+
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime finishDate;
 

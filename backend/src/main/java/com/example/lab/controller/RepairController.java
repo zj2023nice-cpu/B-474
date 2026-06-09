@@ -2,6 +2,7 @@ package com.example.lab.controller;
 
 import com.example.lab.common.ApiResponse;
 import com.example.lab.common.PageResponse;
+import com.example.lab.dto.FinishRepairRequest;
 import com.example.lab.dto.RepairQuery;
 import com.example.lab.entity.Repair;
 import com.example.lab.service.RepairService;
@@ -36,8 +37,8 @@ public class RepairController {
 
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
     @PutMapping("/{id}/finish")
-    public ApiResponse<Repair> finish(@PathVariable Long id) {
-        Repair finishedRepair = repairService.finish(id);
+    public ApiResponse<Repair> finish(@PathVariable Long id, @Valid @RequestBody FinishRepairRequest request) {
+        Repair finishedRepair = repairService.finish(id, request);
         return ApiResponse.success("维修完成", finishedRepair);
     }
 

@@ -1,5 +1,6 @@
 package com.example.lab.service;
 
+import com.example.lab.dto.FinishRepairRequest;
 import com.example.lab.dto.RepairQuery;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Repair;
@@ -39,10 +40,13 @@ public class RepairService {
     }
 
     @Transactional
-    public Repair finish(Long repairId) {
+    public Repair finish(Long repairId, FinishRepairRequest request) {
         Repair repair = repairRepository.findById(repairId).orElseThrow();
         repair.setStatus("FINISHED");
         repair.setFinishDate(LocalDateTime.now());
+        repair.setRepairConclusion(request.getRepairConclusion());
+        repair.setRepairCompany(request.getRepairCompany());
+        repair.setCost(request.getCost());
         
         repair = repairRepository.save(repair);
         

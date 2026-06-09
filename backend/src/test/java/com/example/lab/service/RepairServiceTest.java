@@ -1,5 +1,6 @@
 package com.example.lab.service;
 
+import com.example.lab.dto.FinishRepairRequest;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Repair;
 import com.example.lab.repository.EquipmentRepository;
@@ -111,6 +112,7 @@ class RepairServiceTest {
         finishedRepair.setId(repairId);
         finishedRepair.setStatus("FINISHED");
         finishedRepair.setEquipment(testEquipment);
+        finishedRepair.setRepairConclusion("已修复");
 
         when(repairRepository.save(reportedRepair)).thenReturn(finishedRepair);
         when(repairRepository.hasActiveRepairsByEquipment(testEquipment.getId())).thenReturn(false);
@@ -121,11 +123,17 @@ class RepairServiceTest {
 
         when(equipmentRepository.save(testEquipment)).thenReturn(normalEquipment);
 
-        Repair result = repairService.finish(repairId);
+        FinishRepairRequest request = new FinishRepairRequest();
+        request.setRepairConclusion("已修复");
+        request.setRepairCompany("维修公司A");
+        request.setCost(java.math.BigDecimal.valueOf(100));
+
+        Repair result = repairService.finish(repairId, request);
 
         assertNotNull(result);
         assertEquals("FINISHED", result.getStatus());
         assertNotNull(result.getFinishDate());
+        assertEquals("已修复", result.getRepairConclusion());
 
         verify(repairRepository).findById(repairId);
         verify(repairRepository).save(reportedRepair);
@@ -148,14 +156,19 @@ class RepairServiceTest {
         finishedRepair.setId(repairId);
         finishedRepair.setStatus("FINISHED");
         finishedRepair.setEquipment(testEquipment);
+        finishedRepair.setRepairConclusion("维修完毕");
 
         when(repairRepository.save(reportedRepair)).thenReturn(finishedRepair);
         when(repairRepository.hasActiveRepairsByEquipment(testEquipment.getId())).thenReturn(true);
 
-        Repair result = repairService.finish(repairId);
+        FinishRepairRequest request = new FinishRepairRequest();
+        request.setRepairConclusion("维修完毕");
+
+        Repair result = repairService.finish(repairId, request);
 
         assertNotNull(result);
         assertEquals("FINISHED", result.getStatus());
+        assertEquals("维修完毕", result.getRepairConclusion());
 
         verify(repairRepository).hasActiveRepairsByEquipment(testEquipment.getId());
         verify(equipmentRepository, never()).save(any(Equipment.class));
