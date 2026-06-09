@@ -18,9 +18,23 @@
       <el-table-column prop="applicant.name" label="申请人" />
       <el-table-column prop="startTime" label="开始时间" width="160" />
       <el-table-column prop="endTime" label="结束时间" width="160" />
-      <el-table-column prop="status" label="状态">
+      <el-table-column prop="status" label="状态" width="90">
         <template #default="scope">
           <el-tag :type="getStatusType(scope.row.status)">{{ getStatusText(scope.row.status) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="审批信息" min-width="200">
+        <template #default="scope">
+          <template v-if="scope.row.status === 'APPROVED' || scope.row.status === 'RETURNED'">
+            <div class="approval-info">审批人：{{ scope.row.approver?.name || '-' }}</div>
+            <div class="approval-info">审批时间：{{ scope.row.approveTime || '-' }}</div>
+          </template>
+          <template v-else-if="scope.row.status === 'REJECTED'">
+            <div class="approval-info">审批人：{{ scope.row.approver?.name || '-' }}</div>
+            <div class="approval-info">拒绝时间：{{ scope.row.rejectTime || '-' }}</div>
+            <div class="approval-info reject-reason">原因：{{ scope.row.rejectReason || '-' }}</div>
+          </template>
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="250">
@@ -55,11 +69,11 @@
       <el-form :model="form" label-width="100px">
         <el-form-item label="设备">
           <el-select v-model="form.equipmentId" placeholder="选择设备" filterable>
-            <el-option 
-              v-for="eq in equipments" 
-              :key="eq.id" 
-              :label="`${eq.name} (${eq.code})`" 
-              :value="eq.id" 
+            <el-option
+              v-for="eq in equipments"
+              :key="eq.id"
+              :label="`${eq.name} (${eq.code})`"
+              :value="eq.id"
               :disabled="eq.status !== 'NORMAL'"
             />
           </el-select>
@@ -83,6 +97,13 @@
         <el-button type="primary" @click="handleSubmit">提交</el-button>
       </template>
     </el-dialog>
+
+    <BorrowApprovalDialog
+      v-model="approvalDialogVisible"
+      :action="approvalAction"
+      :borrow-record="approvalRecord"
+      @confirm="handleApprovalConfirm"
+    />
   </div>
 </template>
 
@@ -91,6 +112,7 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import request from '../api/request'
 import { useUserStore } from '../stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import BorrowApprovalDialog from '../components/BorrowApprovalDialog.vue'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'ADMIN')
@@ -100,6 +122,10 @@ const equipments = ref([])
 const dialogVisible = ref(false)
 const form = ref({})
 const dateRange = ref([])
+
+const approvalDialogVisible = ref(false)
+const approvalAction = ref('')
+const approvalRecord = ref(null)
 
 const pageData = ref({
   content: [],
@@ -126,15 +152,15 @@ const fetchBorrows = async () => {
     page: pagination.currentPage,
     size: pagination.pageSize
   }
-  
+
   if (isTeacher.value) {
     params.userId = userStore.user.id
   }
-  
+
   if (searchForm.status) {
     params.status = searchForm.status
   }
-  
+
   const response = await request.get('/borrows', { params })
   pageData.value = response
   pagination.total = response.totalElements
@@ -178,7 +204,7 @@ const handleSubmit = async () => {
     ElMessage.error('请填写完整信息')
     return
   }
-  
+
   const payload = {
     equipment: { id: form.value.equipmentId },
     applicant: { id: userStore.user.id },
@@ -198,16 +224,32 @@ const handleSubmit = async () => {
   }
 }
 
-const handleApprove = async (row) => {
-  await request.put(`/borrows/${row.id}/approve?approverId=${userStore.user.id}`)
-  fetchBorrows()
-  ElMessage.success('已批准')
+const handleApprove = (row) => {
+  approvalAction.value = 'approve'
+  approvalRecord.value = row
+  approvalDialogVisible.value = true
 }
 
-const handleReject = async (row) => {
-  await request.put(`/borrows/${row.id}/reject`)
-  fetchBorrows()
-  ElMessage.success('已拒绝')
+const handleReject = (row) => {
+  approvalAction.value = 'reject'
+  approvalRecord.value = row
+  approvalDialogVisible.value = true
+}
+
+const handleApprovalConfirm = async ({ action, rejectReason }) => {
+  const id = approvalRecord.value.id
+  try {
+    if (action === 'approve') {
+      await request.put(`/borrows/${id}/approve?approverId=${userStore.user.id}`)
+      ElMessage.success('已批准')
+    } else {
+      await request.put(`/borrows/${id}/reject?approverId=${userStore.user.id}&rejectReason=${encodeURIComponent(rejectReason)}`)
+      ElMessage.success('已拒绝')
+    }
+    fetchBorrows()
+  } catch (e) {
+    // handled in request.js
+  }
 }
 
 const handleReturn = async (row) => {
@@ -258,5 +300,15 @@ onMounted(fetchBorrows)
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+.approval-info {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #606266;
+}
+
+.reject-reason {
+  color: #f56c6c;
 }
 </style>

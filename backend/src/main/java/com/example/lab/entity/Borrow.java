@@ -44,4 +44,13 @@ public class Borrow {
     @ManyToOne
     @JoinColumn(name = "approver_id")
     private User approver;
+
+    @Size(max = 500, message = "拒绝原因长度不能超过 500 个字符")
+    private String rejectReason;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime approveTime;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime rejectTime;
 }

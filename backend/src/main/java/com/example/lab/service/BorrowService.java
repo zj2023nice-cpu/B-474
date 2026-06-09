@@ -47,14 +47,26 @@ public class BorrowService {
         Equipment eq = borrow.getEquipment();
         eq.setStatus("BORROWED");
         equipmentRepository.save(eq);
-        
+
+        User approver = new User();
+        approver.setId(approverId);
+        borrow.setApprover(approver);
+        borrow.setApproveTime(LocalDateTime.now());
+
         return borrowRepository.save(borrow);
     }
     
     @Transactional
-    public Borrow reject(Long borrowId) {
+    public Borrow reject(Long borrowId, Long approverId, String rejectReason) {
         Borrow borrow = borrowRepository.findById(borrowId).orElseThrow();
         borrow.setStatus("REJECTED");
+
+        User approver = new User();
+        approver.setId(approverId);
+        borrow.setApprover(approver);
+        borrow.setRejectReason(rejectReason);
+        borrow.setRejectTime(LocalDateTime.now());
+
         return borrowRepository.save(borrow);
     }
 

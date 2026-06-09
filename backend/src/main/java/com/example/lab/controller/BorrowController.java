@@ -43,8 +43,8 @@ public class BorrowController {
     
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
     @PutMapping("/{id}/reject")
-    public ApiResponse<Borrow> reject(@PathVariable Long id) {
-        Borrow rejectedBorrow = borrowService.reject(id);
+    public ApiResponse<Borrow> reject(@PathVariable Long id, @RequestParam Long approverId, @RequestParam(required = false) String rejectReason) {
+        Borrow rejectedBorrow = borrowService.reject(id, approverId, rejectReason);
         return ApiResponse.success("已拒绝", rejectedBorrow);
     }
 

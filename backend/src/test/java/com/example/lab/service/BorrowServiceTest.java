@@ -146,6 +146,8 @@ class BorrowServiceTest {
     @Test
     void testReject_ShouldSetStatusRejected() {
         Long borrowId = 1L;
+        Long approverId = 2L;
+        String rejectReason = "设备维护中";
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
@@ -159,7 +161,7 @@ class BorrowServiceTest {
 
         when(borrowRepository.save(pendingBorrow)).thenReturn(rejectedBorrow);
 
-        Borrow result = borrowService.reject(borrowId);
+        Borrow result = borrowService.reject(borrowId, approverId, rejectReason);
 
         assertNotNull(result);
         assertEquals("REJECTED", result.getStatus());
