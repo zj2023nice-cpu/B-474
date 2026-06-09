@@ -2,6 +2,7 @@ package com.example.lab.controller;
 
 import com.example.lab.common.ApiResponse;
 import com.example.lab.common.PageResponse;
+import com.example.lab.dto.LabDetailDTO;
 import com.example.lab.dto.LabQuery;
 import com.example.lab.entity.Lab;
 import com.example.lab.service.LabService;
@@ -25,6 +26,13 @@ public class LabController {
         Page<Lab> page = labService.findAll(query);
         PageResponse<Lab> response = new PageResponse<>(page);
         return ApiResponse.success(response);
+    }
+
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}/detail")
+    public ApiResponse<LabDetailDTO> getDetail(@PathVariable Long id) {
+        LabDetailDTO detail = labService.getDetail(id);
+        return ApiResponse.success(detail);
     }
 
     @PreAuthorize("hasRole('ADMIN')")

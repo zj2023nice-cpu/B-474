@@ -15,4 +15,7 @@ public interface EquipmentRepository extends JpaRepository<Equipment, Long>, Jpa
     Page<Equipment> findAll(Specification<Equipment> spec, Pageable pageable);
     
     List<Equipment> findByStatusNot(String status);
+
+    long countByLab_Id(Long labId);
+    long countByLab_IdAndStatus(Long labId, String status);
 }
