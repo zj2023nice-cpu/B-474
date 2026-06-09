@@ -18,6 +18,8 @@ public interface RepairRepository extends JpaRepository<Repair, Long>, JpaSpecif
     
     long countByReportDateAfter(LocalDateTime date);
     
+    Repair findTopByEquipment_IdOrderByReportDateDesc(Long equipmentId);
+
     Page<Repair> findAll(Specification<Repair> spec, Pageable pageable);
     
     default boolean hasActiveRepairsByEquipment(Long equipmentId) {

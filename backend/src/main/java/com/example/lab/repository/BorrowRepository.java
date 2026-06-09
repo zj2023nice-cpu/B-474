@@ -22,6 +22,8 @@ public interface BorrowRepository extends JpaRepository<Borrow, Long>, JpaSpecif
     @Query("SELECT COUNT(b) FROM Borrow b WHERE b.status = :status AND b.endTime < :now")
     long countOverdue(@Param("status") String status, @Param("now") LocalDateTime now);
     
+    Borrow findTopByEquipment_IdOrderByApplyDateDesc(Long equipmentId);
+
     Page<Borrow> findAll(Specification<Borrow> spec, Pageable pageable);
     
     @Query("SELECT b FROM Borrow b WHERE b.equipment.id = :equipmentId " +

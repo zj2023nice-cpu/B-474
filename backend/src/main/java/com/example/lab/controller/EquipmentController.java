@@ -2,6 +2,7 @@ package com.example.lab.controller;
 
 import com.example.lab.common.ApiResponse;
 import com.example.lab.common.PageResponse;
+import com.example.lab.dto.EquipmentDetailDTO;
 import com.example.lab.dto.EquipmentQuery;
 import com.example.lab.entity.Equipment;
 import com.example.lab.service.EquipmentService;
@@ -46,6 +47,13 @@ public class EquipmentController {
     public ApiResponse<Void> delete(@PathVariable Long id) {
         equipmentService.deleteEquipment(id);
         return ApiResponse.success("删除成功", null);
+    }
+
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}/detail")
+    public ApiResponse<EquipmentDetailDTO> getDetail(@PathVariable Long id) {
+        EquipmentDetailDTO detail = equipmentService.getDetail(id);
+        return ApiResponse.success(detail);
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")

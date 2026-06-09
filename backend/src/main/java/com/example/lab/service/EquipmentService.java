@@ -1,10 +1,15 @@
 package com.example.lab.service;
 
+import com.example.lab.dto.EquipmentDetailDTO;
 import com.example.lab.dto.EquipmentQuery;
+import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Lab;
+import com.example.lab.entity.Repair;
+import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.LabRepository;
+import com.example.lab.repository.RepairRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -26,6 +31,12 @@ public class EquipmentService {
     
     @Autowired
     private LabRepository labRepository;
+
+    @Autowired
+    private BorrowRepository borrowRepository;
+
+    @Autowired
+    private RepairRepository repairRepository;
 
     @Transactional
     public Equipment addEquipment(Equipment equipment) {
@@ -95,6 +106,72 @@ public class EquipmentService {
     
     public Equipment findById(Long id) {
         return equipmentRepository.findById(id).orElse(null);
+    }
+
+    public EquipmentDetailDTO getDetail(Long id) {
+        Equipment equipment = equipmentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("设备不存在"));
+
+        EquipmentDetailDTO dto = new EquipmentDetailDTO();
+        dto.setId(equipment.getId());
+        dto.setCode(equipment.getCode());
+        dto.setName(equipment.getName());
+        dto.setModel(equipment.getModel());
+        dto.setManufacturer(equipment.getManufacturer());
+        dto.setPurchaseDate(equipment.getPurchaseDate());
+        dto.setPrice(equipment.getPrice());
+        dto.setLifeSpan(equipment.getLifeSpan());
+        dto.setStatus(equipment.getStatus());
+
+        if (equipment.getLab() != null) {
+            EquipmentDetailDTO.LabInfo labInfo = new EquipmentDetailDTO.LabInfo();
+            Lab lab = equipment.getLab();
+            labInfo.setId(lab.getId());
+            labInfo.setName(lab.getName());
+            labInfo.setBuilding(lab.getBuilding());
+            labInfo.setRoom(lab.getRoom());
+            labInfo.setPicName(lab.getPicName());
+            labInfo.setPicPhone(lab.getPicPhone());
+            labInfo.setCapacity(lab.getCapacity());
+            dto.setLab(labInfo);
+        }
+
+        if (equipment.getPurchaseDate() != null && equipment.getLifeSpan() != null) {
+            LocalDate expiryDate = equipment.getPurchaseDate().plusYears(equipment.getLifeSpan());
+            dto.setExpiryDate(expiryDate);
+            LocalDate today = LocalDate.now();
+            long remaining = java.time.temporal.ChronoUnit.DAYS.between(today, expiryDate);
+            dto.setRemainingDays(remaining);
+        }
+
+        Borrow latestBorrow = borrowRepository.findTopByEquipment_IdOrderByApplyDateDesc(id);
+        if (latestBorrow != null) {
+            EquipmentDetailDTO.LatestBorrow borrowDTO = new EquipmentDetailDTO.LatestBorrow();
+            borrowDTO.setId(latestBorrow.getId());
+            borrowDTO.setApplicantName(latestBorrow.getApplicant() != null ? latestBorrow.getApplicant().getName() : null);
+            borrowDTO.setApplyDate(latestBorrow.getApplyDate());
+            borrowDTO.setStartTime(latestBorrow.getStartTime());
+            borrowDTO.setEndTime(latestBorrow.getEndTime());
+            borrowDTO.setPurpose(latestBorrow.getPurpose());
+            borrowDTO.setStatus(latestBorrow.getStatus());
+            dto.setLatestBorrow(borrowDTO);
+        }
+
+        Repair latestRepair = repairRepository.findTopByEquipment_IdOrderByReportDateDesc(id);
+        if (latestRepair != null) {
+            EquipmentDetailDTO.LatestRepair repairDTO = new EquipmentDetailDTO.LatestRepair();
+            repairDTO.setId(latestRepair.getId());
+            repairDTO.setDescription(latestRepair.getDescription());
+            repairDTO.setReportDate(latestRepair.getReportDate());
+            repairDTO.setRepairCompany(latestRepair.getRepairCompany());
+            repairDTO.setCost(latestRepair.getCost());
+            repairDTO.setFinishDate(latestRepair.getFinishDate());
+            repairDTO.setStatus(latestRepair.getStatus());
+            repairDTO.setReporterName(latestRepair.getReporter() != null ? latestRepair.getReporter().getName() : null);
+            dto.setLatestRepair(repairDTO);
+        }
+
+        return dto;
     }
     
     public List<Equipment> findExpiringIn30Days() {

@@ -17,7 +17,7 @@
       <el-button style="margin-left: 10px" @click="resetSearch">重置</el-button>
     </div>
 
-    <el-table :data="pageData.content" style="width: 100%">
+    <el-table :data="pageData.content" style="width: 100%" @row-click="handleRowClick" highlight-current-row>
       <el-table-column prop="code" label="编号" width="120" />
       <el-table-column prop="name" label="名称" />
       <el-table-column prop="model" label="型号" />
@@ -28,9 +28,10 @@
         </template>
       </el-table-column>
       <el-table-column prop="purchaseDate" label="采购日期" />
-      <el-table-column label="操作" v-if="isAdmin">
+      <el-table-column label="操作">
         <template #default="scope">
-          <el-button type="danger" size="small" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button type="primary" size="small" @click.stop="openDetail(scope.row)">详情</el-button>
+          <el-button v-if="isAdmin" type="danger" size="small" @click.stop="handleDelete(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -78,6 +79,75 @@
         <el-button type="primary" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-drawer v-model="drawerVisible" title="设备详情" size="480px" :destroy-on-close="true">
+      <div v-loading="detailLoading">
+        <template v-if="detailData">
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="编号">{{ detailData.code }}</el-descriptions-item>
+            <el-descriptions-item label="名称">{{ detailData.name }}</el-descriptions-item>
+            <el-descriptions-item label="型号">{{ detailData.model || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="生产厂商">{{ detailData.manufacturer || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="采购日期">{{ detailData.purchaseDate || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="价格">{{ detailData.price != null ? `¥${detailData.price}` : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="使用年限">{{ detailData.lifeSpan != null ? `${detailData.lifeSpan} 年` : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="getStatusType(detailData.status)">{{ getStatusText(detailData.status) }}</el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <el-divider content-position="left">所属实验室</el-divider>
+          <el-descriptions v-if="detailData.lab" :column="1" border>
+            <el-descriptions-item label="实验室名称">{{ detailData.lab.name }}</el-descriptions-item>
+            <el-descriptions-item label="建筑">{{ detailData.lab.building || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="房间号">{{ detailData.lab.room || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="负责人">{{ detailData.lab.picName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="联系电话">{{ detailData.lab.picPhone || '-' }}</el-descriptions-item>
+          </el-descriptions>
+          <el-empty v-else description="暂无实验室信息" :image-size="60" />
+
+          <el-divider content-position="left">到期信息</el-divider>
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="预计到期日期">{{ detailData.expiryDate || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="剩余天数">
+              <template v-if="detailData.remainingDays != null">
+                <el-tag :type="detailData.remainingDays <= 0 ? 'danger' : detailData.remainingDays <= 30 ? 'warning' : 'success'">
+                  {{ detailData.remainingDays <= 0 ? '已过期' : `${detailData.remainingDays} 天` }}
+                </el-tag>
+              </template>
+              <span v-else>-</span>
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <el-divider content-position="left">最近借用记录</el-divider>
+          <el-descriptions v-if="detailData.latestBorrow" :column="1" border>
+            <el-descriptions-item label="申请人">{{ detailData.latestBorrow.applicantName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="申请时间">{{ detailData.latestBorrow.applyDate || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="开始时间">{{ detailData.latestBorrow.startTime || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="结束时间">{{ detailData.latestBorrow.endTime || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="用途">{{ detailData.latestBorrow.purpose || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="getBorrowStatusType(detailData.latestBorrow.status)">{{ getBorrowStatusText(detailData.latestBorrow.status) }}</el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
+          <el-empty v-else description="暂无借用记录" :image-size="60" />
+
+          <el-divider content-position="left">最近维修记录</el-divider>
+          <el-descriptions v-if="detailData.latestRepair" :column="1" border>
+            <el-descriptions-item label="故障描述">{{ detailData.latestRepair.description || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="报修时间">{{ detailData.latestRepair.reportDate || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="报修人">{{ detailData.latestRepair.reporterName || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="维修公司">{{ detailData.latestRepair.repairCompany || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="维修费用">{{ detailData.latestRepair.cost != null ? `¥${detailData.latestRepair.cost}` : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="完成时间">{{ detailData.latestRepair.finishDate || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="getRepairStatusType(detailData.latestRepair.status)">{{ getRepairStatusText(detailData.latestRepair.status) }}</el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
+          <el-empty v-else description="暂无维修记录" :image-size="60" />
+        </template>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -93,6 +163,9 @@ const isAdmin = computed(() => userStore.role === 'ADMIN')
 const labs = ref([])
 const dialogVisible = ref(false)
 const form = ref({})
+const drawerVisible = ref(false)
+const detailLoading = ref(false)
+const detailData = ref(null)
 
 const pageData = ref({
   content: [],
@@ -213,6 +286,52 @@ const handleDelete = (row) => {
   })
 }
 
+const openDetail = async (row) => {
+  drawerVisible.value = true
+  detailLoading.value = true
+  detailData.value = null
+  try {
+    const response = await request.get(`/equipments/${row.id}/detail`)
+    detailData.value = response
+  } catch (e) {
+    // handled in request.js
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+const handleRowClick = (row) => {
+  openDetail(row)
+}
+
+const getBorrowStatusType = (status) => {
+  if (status === 'APPROVED') return 'success'
+  if (status === 'PENDING') return 'warning'
+  if (status === 'RETURNED') return 'info'
+  return 'danger'
+}
+
+const getBorrowStatusText = (status) => {
+  if (status === 'APPROVED') return '已批准'
+  if (status === 'PENDING') return '待审批'
+  if (status === 'RETURNED') return '已归还'
+  if (status === 'REJECTED') return '已拒绝'
+  return status
+}
+
+const getRepairStatusType = (status) => {
+  if (status === 'FINISHED') return 'success'
+  if (status === 'IN_PROGRESS') return 'warning'
+  return 'danger'
+}
+
+const getRepairStatusText = (status) => {
+  if (status === 'FINISHED') return '已完成'
+  if (status === 'IN_PROGRESS') return '维修中'
+  if (status === 'REPORTED') return '已报修'
+  return status
+}
+
 onMounted(() => {
   fetchLabs()
   fetchEquipments()
@@ -231,5 +350,14 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+:deep(.el-drawer__body) {
+  padding: 20px;
+}
+
+:deep(.el-divider__text) {
+  font-weight: 600;
+  color: #303133;
 }
 </style>
