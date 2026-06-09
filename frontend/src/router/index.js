@@ -48,6 +48,11 @@ const router = createRouter({
           path: 'expiring',
           name: 'expiring',
           component: () => import('../views/ExpiringEquipments.vue')
+        },
+        {
+          path: 'profile',
+          name: 'profile',
+          component: () => import('../views/ProfileView.vue')
         }
       ]
     }
