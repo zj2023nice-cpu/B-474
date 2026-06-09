@@ -15,6 +15,7 @@ import java.util.List;
 public interface BorrowRepository extends JpaRepository<Borrow, Long>, JpaSpecificationExecutor<Borrow> {
     List<Borrow> findByApplicant_Id(Long applicantId);
     List<Borrow> findByStatus(String status);
+    List<Borrow> findByStatusOrderByApplyDateDesc(String status);
     
     long countByStatus(String status);
     

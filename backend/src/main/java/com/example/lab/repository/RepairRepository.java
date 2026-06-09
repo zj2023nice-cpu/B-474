@@ -7,12 +7,16 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface RepairRepository extends JpaRepository<Repair, Long>, JpaSpecificationExecutor<Repair> {
     List<Repair> findByEquipment_IdAndStatusNot(Long equipmentId, String status);
+    List<Repair> findByStatusNotOrderByReportDateDesc(String status);
     
     long countByStatusNot(String status);
+    
+    long countByReportDateAfter(LocalDateTime date);
     
     Page<Repair> findAll(Specification<Repair> spec, Pageable pageable);
     
