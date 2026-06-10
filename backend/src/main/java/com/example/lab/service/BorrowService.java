@@ -1,6 +1,7 @@
 package com.example.lab.service;
 
 import com.example.lab.dto.BorrowQuery;
+import com.example.lab.dto.ConflictCheckResult;
 import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.User;
@@ -32,19 +33,77 @@ public class BorrowService {
     @Autowired
     private UserRepository userRepository;
 
+    public ConflictCheckResult checkConflicts(Long equipmentId, LocalDateTime startTime, LocalDateTime endTime, Long excludeBorrowId) {
+        List<Borrow> conflicts = findConflictsInternal(equipmentId, startTime, endTime, excludeBorrowId, false);
+        ConflictCheckResult result = new ConflictCheckResult();
+        result.setHasConflict(!conflicts.isEmpty());
+        result.setConflicts(conflicts.stream()
+                .map(ConflictCheckResult.ConflictRecord::new)
+                .collect(java.util.stream.Collectors.toList()));
+        return result;
+    }
+
     @Transactional
     public Borrow apply(Borrow borrow) {
-        List<Borrow> conflicts = borrowRepository.findConflicts(
+        ConflictCheckResult preCheckResult = checkConflicts(
                 borrow.getEquipment().getId(),
                 borrow.getStartTime(),
-                borrow.getEndTime());
+                borrow.getEndTime(),
+                null);
 
-        if (!conflicts.isEmpty()) {
-            throw new BusinessException("该时间段设备已被预约");
+        if (preCheckResult.isHasConflict()) {
+            throw buildConflictException(preCheckResult.getConflicts(), false);
+        }
+
+        List<Borrow> finalConflicts = findConflictsInternal(
+                borrow.getEquipment().getId(),
+                borrow.getStartTime(),
+                borrow.getEndTime(),
+                null,
+                true);
+
+        if (!finalConflicts.isEmpty()) {
+            List<ConflictCheckResult.ConflictRecord> records = finalConflicts.stream()
+                    .map(ConflictCheckResult.ConflictRecord::new)
+                    .collect(java.util.stream.Collectors.toList());
+            throw buildConflictException(records, true);
         }
 
         borrow.setStatus("PENDING");
         return borrowRepository.save(borrow);
+    }
+
+    private BusinessException buildConflictException(List<ConflictCheckResult.ConflictRecord> conflicts, boolean isConcurrent) {
+        StringBuilder sb = new StringBuilder();
+        if (isConcurrent) {
+            sb.append("由于其他用户同时提交申请，");
+        }
+        sb.append("该时间段设备已被预约，冲突记录：\n");
+        for (ConflictCheckResult.ConflictRecord record : conflicts) {
+            sb.append(String.format("- %s (%s): %s ~ %s\n",
+                    record.getApplicantName(),
+                    "APPROVED".equals(record.getStatus()) ? "已批准" : "待审批",
+                    record.getStartTime(),
+                    record.getEndTime()));
+        }
+        if (isConcurrent) {
+            sb.append("\n请调整时间后重新提交");
+        }
+        return new BusinessException(sb.toString().trim());
+    }
+
+    private List<Borrow> findConflictsInternal(Long equipmentId, LocalDateTime startTime, LocalDateTime endTime, Long excludeBorrowId, boolean withLock) {
+        if (equipmentId == null || startTime == null || endTime == null) {
+            return java.util.Collections.emptyList();
+        }
+        if (startTime.isAfter(endTime) || startTime.isEqual(endTime)) {
+            return java.util.Collections.emptyList();
+        }
+        if (withLock) {
+            return borrowRepository.findConflictsWithLock(equipmentId, startTime, endTime, excludeBorrowId);
+        } else {
+            return borrowRepository.findConflicts(equipmentId, startTime, endTime, excludeBorrowId);
+        }
     }
 
     @Transactional

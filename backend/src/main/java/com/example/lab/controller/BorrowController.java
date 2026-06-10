@@ -4,8 +4,12 @@ import com.example.lab.common.ApiResponse;
 import com.example.lab.common.PageResponse;
 import com.example.lab.dto.ApprovalRequest;
 import com.example.lab.dto.BorrowQuery;
+import com.example.lab.dto.ConflictCheckResult;
 import com.example.lab.entity.Borrow;
 import com.example.lab.service.BorrowService;
+
+import java.time.LocalDateTime;
+import org.springframework.format.annotation.DateTimeFormat;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -26,6 +30,17 @@ public class BorrowController {
         Page<Borrow> page = borrowService.findAll(query);
         PageResponse<Borrow> response = new PageResponse<>(page);
         return ApiResponse.success(response);
+    }
+
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/check-conflicts")
+    public ApiResponse<ConflictCheckResult> checkConflicts(
+            @RequestParam Long equipmentId,
+            @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
+            @RequestParam(required = false) Long excludeBorrowId) {
+        ConflictCheckResult result = borrowService.checkConflicts(equipmentId, startTime, endTime, excludeBorrowId);
+        return ApiResponse.success(result);
     }
 
     @PreAuthorize("isAuthenticated()")

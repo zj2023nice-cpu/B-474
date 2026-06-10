@@ -25,7 +25,9 @@ service.interceptors.response.use(
     
     if (res.code !== undefined && res.code !== 200) {
       const errorMessage = res.message || '请求失败'
-      ElMessage.error(errorMessage)
+      if (!errorMessage.includes('冲突记录')) {
+        ElMessage.error(errorMessage)
+      }
       return Promise.reject(new Error(errorMessage))
     }
     
@@ -67,7 +69,9 @@ service.interceptors.response.use(
         errorMessage = errorMessage || '请求参数错误'
       }
       
-      ElMessage.error(errorMessage)
+      if (!errorMessage.includes('冲突记录')) {
+        ElMessage.error(errorMessage)
+      }
     } else {
       if (error.message.includes('timeout')) {
         errorMessage = '请求超时，请稍后重试'
@@ -76,7 +80,9 @@ service.interceptors.response.use(
       } else {
         errorMessage = error.message || '请求失败'
       }
-      ElMessage.error(errorMessage)
+      if (!errorMessage.includes('冲突记录')) {
+        ElMessage.error(errorMessage)
+      }
     }
     
     return Promise.reject(new Error(errorMessage))

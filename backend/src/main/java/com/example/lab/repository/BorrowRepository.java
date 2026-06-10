@@ -6,8 +6,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -30,8 +33,20 @@ public interface BorrowRepository extends JpaRepository<Borrow, Long>, JpaSpecif
     
     @Query("SELECT b FROM Borrow b WHERE b.equipment.id = :equipmentId " +
            "AND b.status IN ('PENDING', 'APPROVED') " +
-           "AND ((b.startTime BETWEEN :start AND :end) OR (b.endTime BETWEEN :start AND :end) OR (:start BETWEEN b.startTime AND b.endTime))")
+           "AND b.startTime < :end AND b.endTime > :start " +
+           "AND (:excludeId IS NULL OR b.id <> :excludeId)")
     List<Borrow> findConflicts(@Param("equipmentId") Long equipmentId, 
                                @Param("start") LocalDateTime start, 
-                               @Param("end") LocalDateTime end);
+                               @Param("end") LocalDateTime end,
+                               @Param("excludeId") Long excludeId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Borrow b WHERE b.equipment.id = :equipmentId " +
+           "AND b.status IN ('PENDING', 'APPROVED') " +
+           "AND b.startTime < :end AND b.endTime > :start " +
+           "AND (:excludeId IS NULL OR b.id <> :excludeId)")
+    List<Borrow> findConflictsWithLock(@Param("equipmentId") Long equipmentId, 
+                                        @Param("start") LocalDateTime start, 
+                                        @Param("end") LocalDateTime end,
+                                        @Param("excludeId") Long excludeId);
 }

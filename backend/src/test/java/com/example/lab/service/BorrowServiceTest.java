@@ -74,7 +74,15 @@ class BorrowServiceTest {
         when(borrowRepository.findConflicts(
                 eq(testEquipment.getId()),
                 any(LocalDateTime.class),
-                any(LocalDateTime.class)
+                any(LocalDateTime.class),
+                isNull()
+        )).thenReturn(Collections.emptyList());
+
+        when(borrowRepository.findConflictsWithLock(
+                eq(testEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                isNull()
         )).thenReturn(Collections.emptyList());
 
         Borrow savedBorrow = new Borrow();
@@ -91,7 +99,14 @@ class BorrowServiceTest {
         verify(borrowRepository).findConflicts(
                 eq(testEquipment.getId()),
                 any(LocalDateTime.class),
-                any(LocalDateTime.class)
+                any(LocalDateTime.class),
+                isNull()
+        );
+        verify(borrowRepository).findConflictsWithLock(
+                eq(testEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                isNull()
         );
         verify(borrowRepository).save(any(Borrow.class));
     }
@@ -105,18 +120,129 @@ class BorrowServiceTest {
 
         Borrow conflictingBorrow = new Borrow();
         conflictingBorrow.setId(2L);
+        User applicant = new User();
+        applicant.setName("张三");
+        conflictingBorrow.setApplicant(applicant);
+        conflictingBorrow.setStatus("APPROVED");
+        conflictingBorrow.setStartTime(LocalDateTime.now().plusDays(1));
+        conflictingBorrow.setEndTime(LocalDateTime.now().plusDays(2));
 
         when(borrowRepository.findConflicts(
                 eq(testEquipment.getId()),
                 any(LocalDateTime.class),
-                any(LocalDateTime.class)
+                any(LocalDateTime.class),
+                isNull()
         )).thenReturn(Arrays.asList(conflictingBorrow));
 
-        assertThrows(BusinessException.class, () -> {
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
             borrowService.apply(newBorrow);
         });
+        assertTrue(exception.getMessage().contains("冲突记录"));
 
+        verify(borrowRepository, never()).findConflictsWithLock(
+                any(), any(), any(), any()
+        );
         verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testApply_WithConcurrentConflicts_ShouldThrowException() {
+        Borrow newBorrow = new Borrow();
+        newBorrow.setEquipment(testEquipment);
+        newBorrow.setStartTime(LocalDateTime.now().plusDays(3));
+        newBorrow.setEndTime(LocalDateTime.now().plusDays(4));
+
+        Borrow conflictingBorrow = new Borrow();
+        conflictingBorrow.setId(2L);
+        User applicant = new User();
+        applicant.setName("李四");
+        conflictingBorrow.setApplicant(applicant);
+        conflictingBorrow.setStatus("PENDING");
+        conflictingBorrow.setStartTime(LocalDateTime.now().plusDays(3));
+        conflictingBorrow.setEndTime(LocalDateTime.now().plusDays(4));
+
+        when(borrowRepository.findConflicts(
+                eq(testEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                isNull()
+        )).thenReturn(Collections.emptyList());
+
+        when(borrowRepository.findConflictsWithLock(
+                eq(testEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                isNull()
+        )).thenReturn(Arrays.asList(conflictingBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.apply(newBorrow);
+        });
+        assertTrue(exception.getMessage().contains("其他用户同时提交申请"));
+        assertTrue(exception.getMessage().contains("请调整时间后重新提交"));
+
+        verify(borrowRepository).findConflicts(
+                eq(testEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                isNull()
+        );
+        verify(borrowRepository).findConflictsWithLock(
+                eq(testEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                isNull()
+        );
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testCheckConflicts_WithNoConflicts_ShouldReturnNoConflict() {
+        LocalDateTime startTime = LocalDateTime.now().plusDays(3);
+        LocalDateTime endTime = LocalDateTime.now().plusDays(4);
+
+        when(borrowRepository.findConflicts(
+                eq(testEquipment.getId()),
+                eq(startTime),
+                eq(endTime),
+                isNull()
+        )).thenReturn(Collections.emptyList());
+
+        var result = borrowService.checkConflicts(testEquipment.getId(), startTime, endTime, null);
+
+        assertNotNull(result);
+        assertFalse(result.isHasConflict());
+        assertTrue(result.getConflicts().isEmpty());
+    }
+
+    @Test
+    void testCheckConflicts_WithConflicts_ShouldReturnConflicts() {
+        LocalDateTime startTime = LocalDateTime.now().plusDays(1);
+        LocalDateTime endTime = LocalDateTime.now().plusDays(2);
+
+        Borrow conflictingBorrow = new Borrow();
+        conflictingBorrow.setId(2L);
+        User applicant = new User();
+        applicant.setName("王五");
+        conflictingBorrow.setApplicant(applicant);
+        conflictingBorrow.setStatus("APPROVED");
+        conflictingBorrow.setStartTime(startTime);
+        conflictingBorrow.setEndTime(endTime);
+
+        when(borrowRepository.findConflicts(
+                eq(testEquipment.getId()),
+                eq(startTime),
+                eq(endTime),
+                isNull()
+        )).thenReturn(Arrays.asList(conflictingBorrow));
+
+        var result = borrowService.checkConflicts(testEquipment.getId(), startTime, endTime, null);
+
+        assertNotNull(result);
+        assertTrue(result.isHasConflict());
+        assertEquals(1, result.getConflicts().size());
+        assertEquals("王五", result.getConflicts().get(0).getApplicantName());
+        assertEquals("APPROVED", result.getConflicts().get(0).getStatus());
     }
 
     @Test
