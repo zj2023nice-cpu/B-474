@@ -39,6 +39,11 @@
           <el-tag :type="getStatusType(scope.row.status)">{{ getStatusText(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column prop="repairConclusion" label="维修结论" min-width="180" show-overflow-tooltip>
+        <template #default="scope">
+          {{ scope.row.repairConclusion || '-' }}
+        </template>
+      </el-table-column>
       <el-table-column prop="repairCompany" label="维修单位" width="120" show-overflow-tooltip>
         <template #default="scope">
           {{ scope.row.repairCompany || '-' }}
