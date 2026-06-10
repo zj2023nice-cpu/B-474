@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="visible" :title="title" width="520px" @close="handleClose" :close-on-click-modal="false">
+  <el-dialog v-model="visible" :title="title" width="520px" :close-on-click-modal="false" :before-close="handleBeforeClose">
     <div class="approval-summary">
       <el-descriptions :column="1" border size="small">
         <el-descriptions-item label="申请人">{{ borrowRecord?.applicant?.name || '-' }}</el-descriptions-item>
@@ -30,13 +30,18 @@
             placeholder="请填写拒绝原因（必填）"
             maxlength="500"
             show-word-limit
+            :disabled="submitting"
           />
         </el-form-item>
       </el-form>
     </div>
 
+    <el-alert v-if="submitError" type="error" :closable="true" show-icon class="submit-error" @close="submitError = ''">
+      <template #title>{{ submitError }}</template>
+    </el-alert>
+
     <template #footer>
-      <el-button @click="handleClose">取消</el-button>
+      <el-button :disabled="submitting" @click="handleCancel">取消</el-button>
       <el-button v-if="action === 'approve'" type="success" :loading="submitting" @click="handleConfirm">
         确认批准
       </el-button>
@@ -67,6 +72,7 @@ const title = computed(() => props.action === 'approve' ? '批准借用申请' :
 
 const rejectFormRef = ref(null)
 const submitting = ref(false)
+const submitError = ref('')
 
 const form = reactive({
   rejectReason: ''
@@ -81,17 +87,34 @@ const rejectRules = {
 }
 
 watch(() => props.modelValue, (val) => {
-  if (!val) {
+  if (val) {
     form.rejectReason = ''
+    submitError.value = ''
+    submitting.value = false
   }
 })
 
-const handleClose = () => {
+const resetForm = () => {
   form.rejectReason = ''
+  submitError.value = ''
+  submitting.value = false
+}
+
+const handleCancel = () => {
+  if (submitting.value) return
+  resetForm()
   visible.value = false
 }
 
+const handleBeforeClose = (done) => {
+  if (submitting.value) return
+  resetForm()
+  done()
+}
+
 const handleConfirm = async () => {
+  submitError.value = ''
+
   if (props.action === 'reject') {
     try {
       await rejectFormRef.value.validate()
@@ -101,16 +124,23 @@ const handleConfirm = async () => {
   }
 
   submitting.value = true
-  try {
-    emit('confirm', {
-      action: props.action,
-      rejectReason: form.rejectReason
-    })
-  } finally {
-    submitting.value = false
-  }
-  handleClose()
+  emit('confirm', {
+    action: props.action,
+    rejectReason: form.rejectReason
+  })
 }
+
+const handleSuccess = () => {
+  resetForm()
+  visible.value = false
+}
+
+const handleError = (message) => {
+  submitError.value = message || '操作失败，请重试'
+  submitting.value = false
+}
+
+defineExpose({ handleSuccess, handleError })
 </script>
 
 <style scoped>
@@ -120,5 +150,9 @@ const handleConfirm = async () => {
 
 .approval-confirm {
   margin-top: 8px;
+}
+
+.submit-error {
+  margin-top: 12px;
 }
 </style>

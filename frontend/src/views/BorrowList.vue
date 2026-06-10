@@ -106,6 +106,7 @@
     </el-dialog>
 
     <BorrowApprovalDialog
+      ref="approvalDialogRef"
       v-model="approvalDialogVisible"
       :action="approvalAction"
       :borrow-record="approvalRecord"
@@ -134,6 +135,7 @@ const loading = ref(false)
 const approvalDialogVisible = ref(false)
 const approvalAction = ref('')
 const approvalRecord = ref(null)
+const approvalDialogRef = ref(null)
 
 const pageData = ref({
   content: [],
@@ -255,14 +257,14 @@ const handleApprovalConfirm = async ({ action, rejectReason }) => {
   try {
     if (action === 'approve') {
       await request.put(`/borrows/${id}/approve`)
-      ElMessage.success('已批准')
     } else {
       await request.put(`/borrows/${id}/reject`, { rejectReason })
-      ElMessage.success('已拒绝')
     }
+    approvalDialogRef.value?.handleSuccess()
     fetchBorrows()
+    ElMessage.success(action === 'approve' ? '已批准' : '已拒绝')
   } catch (e) {
-    // handled in request.js
+    approvalDialogRef.value?.handleError(e.message || '操作失败，请重试')
   }
 }
 
