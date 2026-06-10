@@ -665,13 +665,20 @@ class BorrowServiceTest {
     }
 
     @Test
-    void testDelete_ShouldCallRepositoryDelete() {
+    void testDelete_ByAdmin_ShouldCallRepositoryDelete() {
         Long borrowId = 1L;
 
+        Borrow borrow = new Borrow();
+        borrow.setId(borrowId);
+        borrow.setStatus("PENDING");
+        borrow.setEquipment(testEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(borrow));
         doNothing().when(borrowRepository).deleteById(borrowId);
 
         borrowService.delete(borrowId);
 
+        verify(borrowRepository).findByIdWithLock(borrowId);
         verify(borrowRepository).deleteById(borrowId);
     }
 
