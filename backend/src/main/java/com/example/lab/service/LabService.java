@@ -115,6 +115,7 @@ public class LabService {
         LocalDate today = LocalDate.now();
         LocalDate futureDate = today.plusDays(30);
         List<LabDetailDTO.EquipmentSummary> expiringList = labEquipments.stream()
+                .filter(e -> !"SCRAPPED".equals(e.getStatus()))
                 .filter(e -> e.getPurchaseDate() != null && e.getLifeSpan() != null)
                 .filter(e -> {
                     LocalDate expiry = e.getPurchaseDate().plusYears(e.getLifeSpan());

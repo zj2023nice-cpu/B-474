@@ -1,6 +1,11 @@
 package com.example.lab.service;
 
+import com.example.lab.dto.LabDetailDTO;
+import com.example.lab.entity.Borrow;
+import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Lab;
+import com.example.lab.entity.Repair;
+import com.example.lab.entity.User;
 import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.LabRepository;
@@ -12,11 +17,18 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -148,6 +160,188 @@ class LabServiceTest {
 
         assertThrows(IllegalArgumentException.class, () -> {
             labService.save(null);
+        });
+    }
+
+    // ==================== getDetail 聚合测试 ====================
+
+    private Equipment createEquipment(Long id, String code, String name, String status, LocalDate purchaseDate, Integer lifeSpan) {
+        Equipment eq = new Equipment();
+        eq.setId(id);
+        eq.setCode(code);
+        eq.setName(name);
+        eq.setStatus(status);
+        eq.setPurchaseDate(purchaseDate);
+        eq.setLifeSpan(lifeSpan);
+        eq.setLab(testLab);
+        eq.setPrice(BigDecimal.ZERO);
+        return eq;
+    }
+
+    private User createUser(Long id, String name) {
+        User user = new User();
+        user.setId(id);
+        user.setName(name);
+        user.setUsername("user" + id);
+        user.setPassword("pwd");
+        user.setRole("STUDENT");
+        return user;
+    }
+
+    private Borrow createBorrow(Long id, Equipment eq, User applicant, LocalDateTime startTime, LocalDateTime endTime) {
+        Borrow b = new Borrow();
+        b.setId(id);
+        b.setEquipment(eq);
+        b.setApplicant(applicant);
+        b.setStatus("APPROVED");
+        b.setApplyDate(LocalDateTime.now().minusDays(1));
+        b.setStartTime(startTime);
+        b.setEndTime(endTime);
+        b.setPurpose("实验用途");
+        return b;
+    }
+
+    private Repair createRepair(Long id, Equipment eq, String description, String status) {
+        Repair r = new Repair();
+        r.setId(id);
+        r.setEquipment(eq);
+        r.setDescription(description);
+        r.setStatus(status);
+        r.setReportDate(LocalDateTime.now().minusHours(2));
+        r.setReporter(createUser(10L, "报修人"));
+        r.setCost(BigDecimal.ZERO);
+        return r;
+    }
+
+    @Test
+    void testGetDetail_ExpiringEquipments_ShouldExcludeScrappedAndMapCorrectly() {
+        LocalDate today = LocalDate.now();
+        Equipment eq1 = createEquipment(1L, "LAB01-001", "显微镜", "NORMAL", today.minusYears(2).plusDays(10), 2);
+        Equipment eq2 = createEquipment(2L, "LAB01-002", "离心机", "NORMAL", today.minusYears(5), 5);
+        Equipment eq3 = createEquipment(3L, "LAB01-003", "老设备", "SCRAPPED", today.minusYears(10).plusDays(5), 10);
+        Equipment eq4 = createEquipment(4L, "LAB01-004", "烧杯", "NORMAL", null, null);
+
+        when(labRepository.findById(1L)).thenReturn(Optional.of(testLab));
+        when(equipmentRepository.countByLab_Id(1L)).thenReturn(4L);
+        when(equipmentRepository.countByLab_IdAndStatus(anyLong(), anyString())).thenReturn(0L);
+        when(equipmentRepository.findByLab_Id(1L)).thenReturn(Arrays.asList(eq1, eq2, eq3, eq4));
+        when(borrowRepository.findByEquipment_Lab_IdAndStatusIn(eq(1L), anyList())).thenReturn(Collections.emptyList());
+        when(repairRepository.findByEquipment_Lab_IdAndStatusNot(eq(1L), eq("FINISHED"))).thenReturn(Collections.emptyList());
+
+        LabDetailDTO result = labService.getDetail(1L);
+
+        assertNotNull(result);
+        assertEquals(1L, result.getId());
+        assertEquals("物理实验室", result.getName());
+        assertEquals(4L, result.getTotalEquipment());
+
+        assertNotNull(result.getExpiringEquipments());
+        assertEquals(2, result.getExpiringCount());
+        assertEquals(2, result.getExpiringEquipments().size());
+
+        assertEquals("LAB01-002", result.getExpiringEquipments().get(0).getCode());
+        assertEquals("LAB01-001", result.getExpiringEquipments().get(1).getCode());
+
+        boolean hasScrapped = result.getExpiringEquipments().stream()
+                .anyMatch(e -> "LAB01-003".equals(e.getCode()));
+        assertFalse(hasScrapped, "报废设备不应出现在即将到期列表中");
+
+        boolean hasNoDate = result.getExpiringEquipments().stream()
+                .anyMatch(e -> "LAB01-004".equals(e.getCode()));
+        assertFalse(hasNoDate, "无采购日期或寿命的设备不应计入");
+    }
+
+    @Test
+    void testGetDetail_ActiveBorrows_ShouldMapCorrectly() {
+        Equipment eq1 = createEquipment(1L, "LAB01-001", "显微镜", "BORROWED", LocalDate.now().minusYears(1), 5);
+        Equipment eq2 = createEquipment(2L, "LAB01-002", "离心机", "BORROWED", LocalDate.now().minusYears(2), 5);
+        User applicant = createUser(100L, "张同学");
+
+        Borrow borrow1 = createBorrow(1L, eq1, applicant, LocalDateTime.now(), LocalDateTime.now().plusDays(3));
+        Borrow borrow2 = createBorrow(2L, eq2, applicant, LocalDateTime.now().minusDays(1), LocalDateTime.now().plusDays(2));
+        borrow2.setApplyDate(LocalDateTime.now().minusDays(2));
+
+        when(labRepository.findById(1L)).thenReturn(Optional.of(testLab));
+        when(equipmentRepository.countByLab_Id(1L)).thenReturn(2L);
+        when(equipmentRepository.countByLab_IdAndStatus(anyLong(), anyString())).thenReturn(0L);
+        when(equipmentRepository.findByLab_Id(1L)).thenReturn(Arrays.asList(eq1, eq2));
+        when(borrowRepository.findByEquipment_Lab_IdAndStatusIn(eq(1L), anyList()))
+                .thenReturn(Arrays.asList(borrow1, borrow2));
+        when(repairRepository.findByEquipment_Lab_IdAndStatusNot(eq(1L), eq("FINISHED"))).thenReturn(Collections.emptyList());
+
+        LabDetailDTO result = labService.getDetail(1L);
+
+        assertEquals(2L, result.getActiveBorrowCount());
+        assertNotNull(result.getActiveBorrows());
+        assertEquals(2, result.getActiveBorrows().size());
+
+        LabDetailDTO.BorrowSummary first = result.getActiveBorrows().get(0);
+        assertEquals(1L, first.getId());
+        assertEquals("显微镜", first.getEquipmentName());
+        assertEquals("LAB01-001", first.getEquipmentCode());
+        assertEquals("张同学", first.getApplicantName());
+        assertNotNull(first.getStartTime());
+        assertNotNull(first.getEndTime());
+        assertEquals("实验用途", first.getPurpose());
+    }
+
+    @Test
+    void testGetDetail_ActiveRepairs_ShouldMapCorrectly() {
+        Equipment eq1 = createEquipment(1L, "LAB01-001", "显微镜", "REPAIRING", LocalDate.now().minusYears(1), 5);
+        Equipment eq2 = createEquipment(2L, "LAB01-002", "离心机", "REPAIRING", LocalDate.now().minusYears(2), 5);
+
+        Repair r1 = createRepair(1L, eq1, "镜头模糊", "IN_PROGRESS");
+        Repair r2 = createRepair(2L, eq2, "不转了", "REPORTED");
+
+        when(labRepository.findById(1L)).thenReturn(Optional.of(testLab));
+        when(equipmentRepository.countByLab_Id(1L)).thenReturn(2L);
+        when(equipmentRepository.countByLab_IdAndStatus(anyLong(), anyString())).thenReturn(0L);
+        when(equipmentRepository.findByLab_Id(1L)).thenReturn(Arrays.asList(eq1, eq2));
+        when(borrowRepository.findByEquipment_Lab_IdAndStatusIn(eq(1L), anyList())).thenReturn(Collections.emptyList());
+        when(repairRepository.findByEquipment_Lab_IdAndStatusNot(eq(1L), eq("FINISHED")))
+                .thenReturn(Arrays.asList(r1, r2));
+
+        LabDetailDTO result = labService.getDetail(1L);
+
+        assertEquals(2L, result.getActiveRepairCount());
+        assertNotNull(result.getActiveRepairs());
+        assertEquals(2, result.getActiveRepairs().size());
+
+        LabDetailDTO.RepairSummary first = result.getActiveRepairs().get(0);
+        assertEquals(1L, first.getId());
+        assertEquals("显微镜", first.getEquipmentName());
+        assertEquals("LAB01-001", first.getEquipmentCode());
+        assertEquals("镜头模糊", first.getDescription());
+        assertEquals("IN_PROGRESS", first.getStatus());
+        assertNotNull(first.getReportDate());
+    }
+
+    @Test
+    void testGetDetail_EmptyEquipments_ShouldReturnEmptyAggregations() {
+        when(labRepository.findById(1L)).thenReturn(Optional.of(testLab));
+        when(equipmentRepository.countByLab_Id(1L)).thenReturn(0L);
+        when(equipmentRepository.countByLab_IdAndStatus(anyLong(), anyString())).thenReturn(0L);
+        when(equipmentRepository.findByLab_Id(1L)).thenReturn(Collections.emptyList());
+        when(borrowRepository.findByEquipment_Lab_IdAndStatusIn(eq(1L), anyList())).thenReturn(Collections.emptyList());
+        when(repairRepository.findByEquipment_Lab_IdAndStatusNot(eq(1L), eq("FINISHED"))).thenReturn(Collections.emptyList());
+
+        LabDetailDTO result = labService.getDetail(1L);
+
+        assertEquals(0L, result.getTotalEquipment());
+        assertEquals(0L, result.getExpiringCount());
+        assertTrue(result.getExpiringEquipments().isEmpty());
+        assertEquals(0L, result.getActiveBorrowCount());
+        assertTrue(result.getActiveBorrows().isEmpty());
+        assertEquals(0L, result.getActiveRepairCount());
+        assertTrue(result.getActiveRepairs().isEmpty());
+    }
+
+    @Test
+    void testGetDetail_LabNotFound_ShouldThrowException() {
+        when(labRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(RuntimeException.class, () -> {
+            labService.getDetail(999L);
         });
     }
 }
