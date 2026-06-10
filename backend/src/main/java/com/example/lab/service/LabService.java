@@ -2,9 +2,14 @@ package com.example.lab.service;
 
 import com.example.lab.dto.LabDetailDTO;
 import com.example.lab.dto.LabQuery;
+import com.example.lab.entity.Borrow;
+import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Lab;
+import com.example.lab.entity.Repair;
+import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.LabRepository;
+import com.example.lab.repository.RepairRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -14,9 +19,14 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class LabService {
@@ -25,6 +35,12 @@ public class LabService {
 
     @Autowired
     private EquipmentRepository equipmentRepository;
+
+    @Autowired
+    private BorrowRepository borrowRepository;
+
+    @Autowired
+    private RepairRepository repairRepository;
 
     private static final String[] EQUIPMENT_STATUSES = {"NORMAL", "BORROWED", "REPAIRING", "SCRAPPED"};
 
@@ -93,6 +109,66 @@ public class LabService {
             statusCounts.put(status, equipmentRepository.countByLab_IdAndStatus(id, status));
         }
         dto.setStatusCounts(statusCounts);
+
+        List<Equipment> labEquipments = equipmentRepository.findByLab_Id(id);
+
+        LocalDate today = LocalDate.now();
+        LocalDate futureDate = today.plusDays(30);
+        List<LabDetailDTO.EquipmentSummary> expiringList = labEquipments.stream()
+                .filter(e -> e.getPurchaseDate() != null && e.getLifeSpan() != null)
+                .filter(e -> {
+                    LocalDate expiry = e.getPurchaseDate().plusYears(e.getLifeSpan());
+                    return !expiry.isBefore(today) && !expiry.isAfter(futureDate);
+                })
+                .sorted(Comparator.comparing(e -> e.getPurchaseDate().plusYears(e.getLifeSpan())))
+                .map(e -> {
+                    LabDetailDTO.EquipmentSummary s = new LabDetailDTO.EquipmentSummary();
+                    s.setId(e.getId());
+                    s.setCode(e.getCode());
+                    s.setName(e.getName());
+                    LocalDate expiry = e.getPurchaseDate().plusYears(e.getLifeSpan());
+                    s.setExpiryDate(expiry);
+                    s.setRemainingDays(ChronoUnit.DAYS.between(today, expiry));
+                    return s;
+                })
+                .collect(Collectors.toList());
+        dto.setExpiringEquipments(expiringList);
+        dto.setExpiringCount(expiringList.size());
+
+        List<Borrow> activeBorrows = borrowRepository.findByEquipment_Lab_IdAndStatusIn(id, Arrays.asList("APPROVED"));
+        dto.setActiveBorrowCount(activeBorrows.size());
+        dto.setActiveBorrows(activeBorrows.stream()
+                .sorted(Comparator.comparing(Borrow::getApplyDate).reversed())
+                .limit(5)
+                .map(b -> {
+                    LabDetailDTO.BorrowSummary bs = new LabDetailDTO.BorrowSummary();
+                    bs.setId(b.getId());
+                    bs.setEquipmentName(b.getEquipment() != null ? b.getEquipment().getName() : null);
+                    bs.setEquipmentCode(b.getEquipment() != null ? b.getEquipment().getCode() : null);
+                    bs.setApplicantName(b.getApplicant() != null ? b.getApplicant().getName() : null);
+                    bs.setStartTime(b.getStartTime());
+                    bs.setEndTime(b.getEndTime());
+                    bs.setPurpose(b.getPurpose());
+                    return bs;
+                })
+                .collect(Collectors.toList()));
+
+        List<Repair> activeRepairs = repairRepository.findByEquipment_Lab_IdAndStatusNot(id, "FINISHED");
+        dto.setActiveRepairCount(activeRepairs.size());
+        dto.setActiveRepairs(activeRepairs.stream()
+                .sorted(Comparator.comparing(Repair::getReportDate).reversed())
+                .limit(5)
+                .map(r -> {
+                    LabDetailDTO.RepairSummary rs = new LabDetailDTO.RepairSummary();
+                    rs.setId(r.getId());
+                    rs.setEquipmentName(r.getEquipment() != null ? r.getEquipment().getName() : null);
+                    rs.setEquipmentCode(r.getEquipment() != null ? r.getEquipment().getCode() : null);
+                    rs.setDescription(r.getDescription());
+                    rs.setReportDate(r.getReportDate());
+                    rs.setStatus(r.getStatus());
+                    return rs;
+                })
+                .collect(Collectors.toList()));
 
         return dto;
     }

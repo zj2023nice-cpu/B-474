@@ -24,6 +24,8 @@ public interface BorrowRepository extends JpaRepository<Borrow, Long>, JpaSpecif
     
     Borrow findTopByEquipment_IdOrderByApplyDateDesc(Long equipmentId);
 
+    List<Borrow> findByEquipment_Lab_IdAndStatusIn(Long labId, List<String> statuses);
+
     Page<Borrow> findAll(Specification<Borrow> spec, Pageable pageable);
     
     @Query("SELECT b FROM Borrow b WHERE b.equipment.id = :equipmentId " +

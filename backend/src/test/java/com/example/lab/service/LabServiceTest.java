@@ -1,7 +1,10 @@
 package com.example.lab.service;
 
 import com.example.lab.entity.Lab;
+import com.example.lab.repository.BorrowRepository;
+import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.LabRepository;
+import com.example.lab.repository.RepairRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,6 +24,15 @@ class LabServiceTest {
 
     @Mock
     private LabRepository labRepository;
+
+    @Mock
+    private EquipmentRepository equipmentRepository;
+
+    @Mock
+    private BorrowRepository borrowRepository;
+
+    @Mock
+    private RepairRepository repairRepository;
 
     @InjectMocks
     private LabService labService;
