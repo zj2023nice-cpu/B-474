@@ -4,6 +4,8 @@ import com.example.lab.common.ApiResponse;
 import com.example.lab.common.PageResponse;
 import com.example.lab.dto.EquipmentDetailDTO;
 import com.example.lab.dto.EquipmentQuery;
+import com.example.lab.dto.ExpiringEquipmentDTO;
+import com.example.lab.dto.ExpiringQuery;
 import com.example.lab.entity.Equipment;
 import com.example.lab.service.EquipmentService;
 import jakarta.validation.Valid;
@@ -58,8 +60,9 @@ public class EquipmentController {
 
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
     @GetMapping("/expiring")
-    public ApiResponse<List<Equipment>> getExpiringIn30Days() {
-        List<Equipment> expiringEquipments = equipmentService.findExpiringIn30Days();
-        return ApiResponse.success(expiringEquipments);
+    public ApiResponse<PageResponse<ExpiringEquipmentDTO>> getExpiring(ExpiringQuery query) {
+        Page<ExpiringEquipmentDTO> page = equipmentService.findExpiring(query);
+        PageResponse<ExpiringEquipmentDTO> response = new PageResponse<>(page);
+        return ApiResponse.success(response);
     }
 }

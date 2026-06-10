@@ -2,6 +2,8 @@ package com.example.lab.service;
 
 import com.example.lab.dto.EquipmentDetailDTO;
 import com.example.lab.dto.EquipmentQuery;
+import com.example.lab.dto.ExpiringEquipmentDTO;
+import com.example.lab.dto.ExpiringQuery;
 import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Lab;
@@ -12,6 +14,7 @@ import com.example.lab.repository.LabRepository;
 import com.example.lab.repository.RepairRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -21,6 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -195,5 +201,119 @@ public class EquipmentService {
                 return expiry1.compareTo(expiry2);
             })
             .collect(Collectors.toList());
+    }
+
+    public Page<ExpiringEquipmentDTO> findExpiring(ExpiringQuery query) {
+        LocalDate today = LocalDate.now();
+
+        Specification<Equipment> spec = Specification.where((root, q, cb) ->
+                cb.notEqual(root.get("status"), "SCRAPPED"));
+
+        if (query.getLabId() != null) {
+            spec = spec.and((root, q, cb) ->
+                    cb.equal(root.get("lab").get("id"), query.getLabId()));
+        }
+
+        if (StringUtils.hasText(query.getStatus())) {
+            spec = spec.and((root, q, cb) ->
+                    cb.equal(root.get("status"), query.getStatus()));
+        }
+
+        List<Equipment> all = equipmentRepository.findAll(spec);
+
+        List<ExpiringEquipmentDTO> dtos = all.stream().map(e -> {
+            ExpiringEquipmentDTO dto = new ExpiringEquipmentDTO();
+            dto.setId(e.getId());
+            dto.setCode(e.getCode());
+            dto.setName(e.getName());
+            dto.setModel(e.getModel());
+            dto.setManufacturer(e.getManufacturer());
+            dto.setPurchaseDate(e.getPurchaseDate());
+            dto.setPrice(e.getPrice());
+            dto.setLifeSpan(e.getLifeSpan());
+            dto.setStatus(e.getStatus());
+
+            if (e.getLab() != null) {
+                ExpiringEquipmentDTO.LabInfo labInfo = new ExpiringEquipmentDTO.LabInfo();
+                labInfo.setId(e.getLab().getId());
+                labInfo.setName(e.getLab().getName());
+                dto.setLab(labInfo);
+            }
+
+            boolean hasPurchaseDate = e.getPurchaseDate() != null;
+            boolean hasLifeSpan = e.getLifeSpan() != null;
+
+            if (hasPurchaseDate && hasLifeSpan) {
+                LocalDate expiryDate = e.getPurchaseDate().plusYears(e.getLifeSpan());
+                long remaining = ChronoUnit.DAYS.between(today, expiryDate);
+                dto.setExpiryDate(expiryDate);
+                dto.setRemainingDays(remaining);
+                dto.setDataComplete(true);
+            } else {
+                dto.setDataComplete(false);
+                List<String> reasons = new ArrayList<>();
+                if (!hasPurchaseDate) reasons.add("缺少采购日期");
+                if (!hasLifeSpan) reasons.add("缺少使用年限");
+                dto.setDataIncompleteReason(String.join("、", reasons));
+            }
+
+            return dto;
+        }).collect(Collectors.toList());
+
+        dtos = dtos.stream().filter(dto -> {
+            if (!dto.isDataComplete()) {
+                return query.getIncludeIncomplete();
+            }
+            if (Boolean.TRUE.equals(query.getExpiredOnly())) {
+                return dto.getRemainingDays() < 0;
+            }
+            return dto.getRemainingDays() <= 30;
+        }).collect(Collectors.toList());
+
+        Comparator<ExpiringEquipmentDTO> comparator = createExpiringComparator(query.getSortBy(), query.getSortOrder());
+        dtos.sort(comparator);
+
+        int total = dtos.size();
+        int start = (query.getPage() - 1) * query.getSize();
+        int end = Math.min(start + query.getSize(), total);
+
+        List<ExpiringEquipmentDTO> pageContent;
+        if (start >= total) {
+            pageContent = new ArrayList<>();
+        } else {
+            pageContent = dtos.subList(start, end);
+        }
+
+        Pageable pageable = PageRequest.of(query.getPage() - 1, query.getSize());
+        return new PageImpl<>(pageContent, pageable, total);
+    }
+
+    private Comparator<ExpiringEquipmentDTO> createExpiringComparator(String sortBy, String sortOrder) {
+        boolean asc = "asc".equalsIgnoreCase(sortOrder);
+
+        Comparator<ExpiringEquipmentDTO> comparator;
+        switch (sortBy) {
+            case "expiryDate":
+                comparator = Comparator.comparing(
+                        (ExpiringEquipmentDTO dto) -> dto.getExpiryDate() != null ? dto.getExpiryDate() : LocalDate.MAX,
+                        asc ? Comparator.naturalOrder() : Comparator.reverseOrder());
+                break;
+            case "overdueDegree":
+                comparator = Comparator.comparing(
+                        (ExpiringEquipmentDTO dto) -> dto.getRemainingDays() != null ? dto.getRemainingDays() : Long.MAX_VALUE,
+                        asc ? Comparator.naturalOrder() : Comparator.reverseOrder());
+                break;
+            case "remainingDays":
+            default:
+                comparator = Comparator.comparing(
+                        (ExpiringEquipmentDTO dto) -> {
+                            if (!dto.isDataComplete()) return Long.MAX_VALUE;
+                            return dto.getRemainingDays() != null ? dto.getRemainingDays() : Long.MAX_VALUE;
+                        },
+                        asc ? Comparator.naturalOrder() : Comparator.reverseOrder());
+                break;
+        }
+
+        return comparator.thenComparing(dto -> dto.getCode() != null ? dto.getCode() : "");
     }
 }
