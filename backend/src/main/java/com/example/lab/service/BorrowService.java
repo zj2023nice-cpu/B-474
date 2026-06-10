@@ -243,6 +243,9 @@ public class BorrowService {
         if (STATUS_RETURNED.equals(status)) {
             throw new BusinessException("该借用已归还，无法审批");
         }
+        if (STATUS_CANCELLED.equals(status)) {
+            throw new BusinessException("该申请已取消，无法审批");
+        }
         if (!STATUS_PENDING.equals(status)) {
             throw new BusinessException("当前状态不允许审批，仅待审批状态的申请可以审批");
         }

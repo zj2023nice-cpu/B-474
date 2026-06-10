@@ -267,6 +267,23 @@ const fetchBorrows = async () => {
   }
 }
 
+const fetchBorrowsWithPageFallback = async () => {
+  const requestedPage = pagination.currentPage
+  await fetchBorrows()
+
+  const currentContent = pageData.value.content
+  const totalPages = pageData.value.totalPages
+
+  const contentEmpty = !currentContent || currentContent.length === 0
+  const hasValidPages = totalPages > 0
+  const needsFallback = contentEmpty && hasValidPages && requestedPage !== totalPages
+
+  if (needsFallback) {
+    pagination.currentPage = totalPages
+    await fetchBorrows()
+  }
+}
+
 const handleSearch = () => {
   pagination.currentPage = 1
   fetchBorrows()
@@ -385,7 +402,7 @@ const handleApprove = (row) => {
   if (approvalSubmitting.value) return
   if (row.status !== 'PENDING') {
     ElMessage.warning('当前状态无法审批')
-    fetchBorrows()
+    fetchBorrowsWithPageFallback()
     return
   }
   approvalAction.value = 'approve'
@@ -397,7 +414,7 @@ const handleReject = (row) => {
   if (approvalSubmitting.value) return
   if (row.status !== 'PENDING') {
     ElMessage.warning('当前状态无法审批')
-    fetchBorrows()
+    fetchBorrowsWithPageFallback()
     return
   }
   approvalAction.value = 'reject'
@@ -407,12 +424,12 @@ const handleReject = (row) => {
 
 const handleApprovalConfirm = async ({ action, rejectReason }) => {
   if (approvalSubmitting.value) return
-  
+
   const id = approvalRecord.value?.id
   if (!id) return
 
   approvalSubmitting.value = true
-  
+
   try {
     let result
     if (action === 'approve') {
@@ -420,20 +437,20 @@ const handleApprovalConfirm = async ({ action, rejectReason }) => {
     } else {
       result = await request.put(`/borrows/${id}/reject`, { rejectReason })
     }
-    
+
     approvalDialogRef.value?.handleSuccess()
-    
+
     const idx = pageData.value.content.findIndex(item => item.id === id)
     if (idx !== -1 && result) {
       pageData.value.content.splice(idx, 1, result)
     }
-    
-    await fetchBorrows()
-    
+
+    await fetchBorrowsWithPageFallback()
+
     ElMessage.success(action === 'approve' ? '已批准' : '已拒绝')
   } catch (e) {
     approvalDialogRef.value?.handleError(e.message || '操作失败，请重试')
-    fetchBorrows()
+    fetchBorrowsWithPageFallback()
   } finally {
     approvalSubmitting.value = false
   }
@@ -445,24 +462,24 @@ const handleReturn = async (row) => {
   if (returning.value) return
   if (row.status !== 'APPROVED') {
     ElMessage.warning('当前状态无法归还')
-    fetchBorrows()
+    fetchBorrowsWithPageFallback()
     return
   }
-  
+
   currentActionId.value = row.id
   returning.value = true
   try {
     const result = await request.put(`/borrows/${row.id}/return`)
-    
+
     const idx = pageData.value.content.findIndex(item => item.id === row.id)
     if (idx !== -1 && result) {
       pageData.value.content.splice(idx, 1, result)
     }
-    
-    await fetchBorrows()
+
+    await fetchBorrowsWithPageFallback()
     ElMessage.success('已归还')
   } catch (e) {
-    fetchBorrows()
+    fetchBorrowsWithPageFallback()
   } finally {
     returning.value = false
     currentActionId.value = null
@@ -475,7 +492,7 @@ const handleCancel = (row) => {
   if (cancelling.value) return
   if (row.status !== 'PENDING') {
     ElMessage.warning('当前状态无法取消')
-    fetchBorrows()
+    fetchBorrowsWithPageFallback()
     return
   }
 
@@ -494,12 +511,7 @@ const handleCancel = (row) => {
         pageData.value.content.splice(idx, 1, result)
       }
 
-      const currentPage = pagination.currentPage
-      await fetchBorrows()
-      if (pagination.currentPage !== currentPage && pageData.value.content.length === 0 && pagination.currentPage > 1) {
-        pagination.currentPage = Math.max(1, pagination.currentPage - 1)
-        await fetchBorrows()
-      }
+      await fetchBorrowsWithPageFallback()
       ElMessage.success('已取消')
     } finally {
       cancelling.value = false

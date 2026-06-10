@@ -404,6 +404,25 @@ class BorrowServiceTest {
     }
 
     @Test
+    void testApprove_AlreadyCancelledStatus_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+
+        Borrow cancelledBorrow = new Borrow();
+        cancelledBorrow.setId(borrowId);
+        cancelledBorrow.setStatus("CANCELLED");
+        cancelledBorrow.setEquipment(testEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(cancelledBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.approve(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("已取消"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
     void testApprove_AlreadyHasApprover_ShouldThrowBusinessException() {
         Long borrowId = 1L;
 
@@ -485,6 +504,25 @@ class BorrowServiceTest {
             borrowService.reject(borrowId, "原因");
         });
         assertTrue(exception.getMessage().contains("已被批准"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testReject_AlreadyCancelledStatus_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+
+        Borrow cancelledBorrow = new Borrow();
+        cancelledBorrow.setId(borrowId);
+        cancelledBorrow.setStatus("CANCELLED");
+        cancelledBorrow.setEquipment(testEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(cancelledBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.reject(borrowId, "原因");
+        });
+        assertTrue(exception.getMessage().contains("已取消"));
 
         verify(borrowRepository, never()).save(any(Borrow.class));
     }
