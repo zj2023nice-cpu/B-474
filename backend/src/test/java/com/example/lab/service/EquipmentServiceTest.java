@@ -555,4 +555,179 @@ class EquipmentServiceTest {
         assertEquals(15, result.getTotalElements());
         assertEquals(2, result.getTotalPages());
     }
+
+    @Test
+    void testFindExpiring_ExpiredOnlyWithIncomplete_ShouldExcludeIncompletes() {
+        LocalDate today = LocalDate.now();
+        Lab lab1 = new Lab();
+        lab1.setId(1L);
+        lab1.setName("物理实验室");
+
+        Equipment overdueEq = new Equipment();
+        overdueEq.setId(1L);
+        overdueEq.setCode("LAB01-001");
+        overdueEq.setName("已过期设备");
+        overdueEq.setStatus("NORMAL");
+        overdueEq.setPurchaseDate(today.minusYears(6));
+        overdueEq.setLifeSpan(5);
+        overdueEq.setLab(lab1);
+
+        Equipment noPurchaseDate = new Equipment();
+        noPurchaseDate.setId(2L);
+        noPurchaseDate.setCode("LAB01-002");
+        noPurchaseDate.setName("无采购日期");
+        noPurchaseDate.setStatus("NORMAL");
+        noPurchaseDate.setLifeSpan(5);
+        noPurchaseDate.setLab(lab1);
+
+        Equipment noLifeSpan = new Equipment();
+        noLifeSpan.setId(3L);
+        noLifeSpan.setCode("LAB01-003");
+        noLifeSpan.setName("无使用年限");
+        noLifeSpan.setStatus("NORMAL");
+        noLifeSpan.setPurchaseDate(today.minusYears(10));
+        noLifeSpan.setLab(lab1);
+
+        when(equipmentRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(Arrays.asList(overdueEq, noPurchaseDate, noLifeSpan));
+
+        ExpiringQuery query = new ExpiringQuery();
+        query.setExpiredOnly(true);
+        query.setIncludeIncomplete(true);
+        query.setSortBy("remainingDays");
+        query.setSortOrder("asc");
+
+        Page<ExpiringEquipmentDTO> result = equipmentService.findExpiring(query);
+
+        assertEquals(1, result.getContent().size());
+        assertTrue(result.getContent().get(0).isDataComplete());
+        assertTrue(result.getContent().get(0).getRemainingDays() < 0);
+        assertEquals("LAB01-001", result.getContent().get(0).getCode());
+    }
+
+    @Test
+    void testFindExpiring_OverdueDegreeVsRemainingDays_ShouldSortDifferently() {
+        LocalDate today = LocalDate.now();
+        Lab lab1 = new Lab();
+        lab1.setId(1L);
+        lab1.setName("物理实验室");
+
+        Equipment eqOverdue30 = new Equipment();
+        eqOverdue30.setId(1L);
+        eqOverdue30.setCode("LAB01-001");
+        eqOverdue30.setName("超期30天");
+        eqOverdue30.setStatus("NORMAL");
+        eqOverdue30.setPurchaseDate(today.minusYears(5).minusDays(30));
+        eqOverdue30.setLifeSpan(5);
+        eqOverdue30.setLab(lab1);
+
+        Equipment eqOverdue10 = new Equipment();
+        eqOverdue10.setId(2L);
+        eqOverdue10.setCode("LAB01-002");
+        eqOverdue10.setName("超期10天");
+        eqOverdue10.setStatus("NORMAL");
+        eqOverdue10.setPurchaseDate(today.minusYears(5).minusDays(10));
+        eqOverdue10.setLifeSpan(5);
+        eqOverdue10.setLab(lab1);
+
+        Equipment eqSoon10 = new Equipment();
+        eqSoon10.setId(3L);
+        eqSoon10.setCode("LAB01-003");
+        eqSoon10.setName("还有10天到期");
+        eqSoon10.setStatus("NORMAL");
+        eqSoon10.setPurchaseDate(today.minusYears(5).plusDays(10));
+        eqSoon10.setLifeSpan(5);
+        eqSoon10.setLab(lab1);
+
+        Equipment eqSoon20 = new Equipment();
+        eqSoon20.setId(4L);
+        eqSoon20.setCode("LAB01-004");
+        eqSoon20.setName("还有20天到期");
+        eqSoon20.setStatus("NORMAL");
+        eqSoon20.setPurchaseDate(today.minusYears(5).plusDays(20));
+        eqSoon20.setLifeSpan(5);
+        eqSoon20.setLab(lab1);
+
+        when(equipmentRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(Arrays.asList(eqOverdue30, eqOverdue10, eqSoon10, eqSoon20));
+
+        ExpiringQuery queryByDegree = new ExpiringQuery();
+        queryByDegree.setExpiredOnly(false);
+        queryByDegree.setIncludeIncomplete(true);
+        queryByDegree.setSortBy("overdueDegree");
+        queryByDegree.setSortOrder("desc");
+
+        Page<ExpiringEquipmentDTO> resultByDegree = equipmentService.findExpiring(queryByDegree);
+
+        ExpiringQuery queryByRemaining = new ExpiringQuery();
+        queryByRemaining.setExpiredOnly(false);
+        queryByRemaining.setIncludeIncomplete(true);
+        queryByRemaining.setSortBy("remainingDays");
+        queryByRemaining.setSortOrder("asc");
+
+        Page<ExpiringEquipmentDTO> resultByRemaining = equipmentService.findExpiring(queryByRemaining);
+
+        assertEquals(4, resultByDegree.getContent().size());
+        assertEquals(4, resultByRemaining.getContent().size());
+
+        assertEquals("LAB01-001", resultByDegree.getContent().get(0).getCode());
+        assertEquals("LAB01-002", resultByDegree.getContent().get(1).getCode());
+        long degree0 = Math.max(0, -resultByDegree.getContent().get(0).getRemainingDays());
+        long degree1 = Math.max(0, -resultByDegree.getContent().get(1).getRemainingDays());
+        assertTrue(degree0 >= degree1);
+
+        long remaining0 = resultByRemaining.getContent().get(0).getRemainingDays();
+        long remaining1 = resultByRemaining.getContent().get(1).getRemainingDays();
+        assertTrue(remaining0 <= remaining1);
+    }
+
+    @Test
+    void testFindExpiring_DescSort_IncompletesStillLast() {
+        LocalDate today = LocalDate.now();
+        Lab lab1 = new Lab();
+        lab1.setId(1L);
+        lab1.setName("物理实验室");
+
+        Equipment eqComplete1 = new Equipment();
+        eqComplete1.setId(1L);
+        eqComplete1.setCode("LAB01-001");
+        eqComplete1.setName("设备A");
+        eqComplete1.setStatus("NORMAL");
+        eqComplete1.setPurchaseDate(today.minusYears(5).minusDays(30));
+        eqComplete1.setLifeSpan(5);
+        eqComplete1.setLab(lab1);
+
+        Equipment eqComplete2 = new Equipment();
+        eqComplete2.setId(2L);
+        eqComplete2.setCode("LAB01-002");
+        eqComplete2.setName("设备B");
+        eqComplete2.setStatus("NORMAL");
+        eqComplete2.setPurchaseDate(today.minusYears(4).minusMonths(11));
+        eqComplete2.setLifeSpan(5);
+        eqComplete2.setLab(lab1);
+
+        Equipment eqIncomplete = new Equipment();
+        eqIncomplete.setId(3L);
+        eqIncomplete.setCode("LAB01-003");
+        eqIncomplete.setName("信息不全");
+        eqIncomplete.setStatus("NORMAL");
+        eqIncomplete.setLab(lab1);
+
+        when(equipmentRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
+                .thenReturn(Arrays.asList(eqIncomplete, eqComplete1, eqComplete2));
+
+        ExpiringQuery query = new ExpiringQuery();
+        query.setExpiredOnly(false);
+        query.setIncludeIncomplete(true);
+        query.setSortBy("remainingDays");
+        query.setSortOrder("desc");
+
+        Page<ExpiringEquipmentDTO> result = equipmentService.findExpiring(query);
+
+        assertEquals(3, result.getContent().size());
+        assertTrue(result.getContent().get(0).isDataComplete());
+        assertTrue(result.getContent().get(1).isDataComplete());
+        assertFalse(result.getContent().get(2).isDataComplete());
+        assertEquals("LAB01-003", result.getContent().get(2).getCode());
+    }
 }

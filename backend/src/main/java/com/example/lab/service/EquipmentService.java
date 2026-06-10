@@ -261,11 +261,11 @@ public class EquipmentService {
         }).collect(Collectors.toList());
 
         dtos = dtos.stream().filter(dto -> {
+            if (Boolean.TRUE.equals(query.getExpiredOnly())) {
+                return dto.isDataComplete() && dto.getRemainingDays() < 0;
+            }
             if (!dto.isDataComplete()) {
                 return query.getIncludeIncomplete();
-            }
-            if (Boolean.TRUE.equals(query.getExpiredOnly())) {
-                return dto.getRemainingDays() < 0;
             }
             return dto.getRemainingDays() <= 30;
         }).collect(Collectors.toList());
@@ -291,29 +291,37 @@ public class EquipmentService {
     private Comparator<ExpiringEquipmentDTO> createExpiringComparator(String sortBy, String sortOrder) {
         boolean asc = "asc".equalsIgnoreCase(sortOrder);
 
-        Comparator<ExpiringEquipmentDTO> comparator;
+        Comparator<ExpiringEquipmentDTO> dataCompleteFirst = Comparator.comparing(
+                (ExpiringEquipmentDTO dto) -> !dto.isDataComplete());
+
+        Comparator<ExpiringEquipmentDTO> fieldComparator;
         switch (sortBy) {
             case "expiryDate":
-                comparator = Comparator.comparing(
+                fieldComparator = Comparator.comparing(
                         (ExpiringEquipmentDTO dto) -> dto.getExpiryDate() != null ? dto.getExpiryDate() : LocalDate.MAX,
                         asc ? Comparator.naturalOrder() : Comparator.reverseOrder());
                 break;
             case "overdueDegree":
-                comparator = Comparator.comparing(
-                        (ExpiringEquipmentDTO dto) -> dto.getRemainingDays() != null ? dto.getRemainingDays() : Long.MAX_VALUE,
-                        asc ? Comparator.naturalOrder() : Comparator.reverseOrder());
+                fieldComparator = Comparator.comparingLong(
+                        (ExpiringEquipmentDTO dto) -> {
+                            if (dto.getRemainingDays() == null) return 0L;
+                            return Math.max(0L, -dto.getRemainingDays());
+                        });
+                if (!asc) {
+                    fieldComparator = fieldComparator.reversed();
+                }
                 break;
             case "remainingDays":
             default:
-                comparator = Comparator.comparing(
-                        (ExpiringEquipmentDTO dto) -> {
-                            if (!dto.isDataComplete()) return Long.MAX_VALUE;
-                            return dto.getRemainingDays() != null ? dto.getRemainingDays() : Long.MAX_VALUE;
-                        },
-                        asc ? Comparator.naturalOrder() : Comparator.reverseOrder());
+                fieldComparator = Comparator.comparingLong(
+                        (ExpiringEquipmentDTO dto) -> dto.getRemainingDays() != null ? dto.getRemainingDays() : Long.MAX_VALUE);
+                if (!asc) {
+                    fieldComparator = fieldComparator.reversed();
+                }
                 break;
         }
 
-        return comparator.thenComparing(dto -> dto.getCode() != null ? dto.getCode() : "");
+        return dataCompleteFirst.thenComparing(fieldComparator)
+                .thenComparing(dto -> dto.getCode() != null ? dto.getCode() : "");
     }
 }

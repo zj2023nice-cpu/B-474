@@ -17,8 +17,11 @@
           <el-option label="借用中" value="BORROWED" />
           <el-option label="维修中" value="REPAIRING" />
         </el-select>
-        <el-switch v-model="searchForm.expiredOnly" active-text="只看已超期" inactive-text="" style="margin-left: 10px" @change="handleSearch" />
-        <el-switch v-model="searchForm.includeIncomplete" active-text="含信息不全" inactive-text="" style="margin-left: 10px" @change="handleSearch" />
+        <el-switch v-model="searchForm.expiredOnly" active-text="只看已超期" inactive-text="" style="margin-left: 10px" @change="onExpiredOnlyChange" />
+        <el-tooltip v-if="searchForm.expiredOnly" content="只看已超期模式下仅展示能确认超期的设备" placement="top">
+          <el-switch v-model="searchForm.includeIncomplete" active-text="含信息不全" inactive-text="" style="margin-left: 10px" disabled @change="handleSearch" />
+        </el-tooltip>
+        <el-switch v-else v-model="searchForm.includeIncomplete" active-text="含信息不全" inactive-text="" style="margin-left: 10px" @change="handleSearch" />
         <el-select v-model="searchForm.sortBy" placeholder="排序方式" style="width: 140px; margin-left: 10px" @change="handleSearch">
           <el-option label="剩余天数" value="remainingDays" />
           <el-option label="到期日期" value="expiryDate" />
@@ -211,6 +214,13 @@ const fetchLabs = async () => {
   const params = { page: 1, size: 1000 }
   const response = await request.get('/labs', { params })
   labs.value = response.content
+}
+
+const onExpiredOnlyChange = (val) => {
+  if (val) {
+    searchForm.includeIncomplete = false
+  }
+  handleSearch()
 }
 
 const handleSearch = () => {
