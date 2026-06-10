@@ -34,7 +34,7 @@ public class BorrowService {
     private UserRepository userRepository;
 
     public ConflictCheckResult checkConflicts(Long equipmentId, LocalDateTime startTime, LocalDateTime endTime, Long excludeBorrowId) {
-        List<Borrow> conflicts = findConflictsInternal(equipmentId, startTime, endTime, excludeBorrowId, false);
+        List<Borrow> conflicts = findConflictsInternal(equipmentId, startTime, endTime, excludeBorrowId);
         ConflictCheckResult result = new ConflictCheckResult();
         result.setHasConflict(!conflicts.isEmpty());
         result.setConflicts(conflicts.stream()
@@ -55,18 +55,21 @@ public class BorrowService {
             throw buildConflictException(preCheckResult.getConflicts(), false);
         }
 
-        List<Borrow> finalConflicts = findConflictsInternal(
+        Equipment equipment = equipmentRepository.findByIdWithLock(borrow.getEquipment().getId())
+                .orElseThrow(() -> new BusinessException(404, "设备不存在"));
+
+        if (!"NORMAL".equals(equipment.getStatus())) {
+            throw new BusinessException("设备当前状态不可借用：" + equipment.getStatus());
+        }
+
+        ConflictCheckResult finalCheckResult = checkConflicts(
                 borrow.getEquipment().getId(),
                 borrow.getStartTime(),
                 borrow.getEndTime(),
-                null,
-                true);
+                null);
 
-        if (!finalConflicts.isEmpty()) {
-            List<ConflictCheckResult.ConflictRecord> records = finalConflicts.stream()
-                    .map(ConflictCheckResult.ConflictRecord::new)
-                    .collect(java.util.stream.Collectors.toList());
-            throw buildConflictException(records, true);
+        if (finalCheckResult.isHasConflict()) {
+            throw buildConflictException(finalCheckResult.getConflicts(), true);
         }
 
         borrow.setStatus("PENDING");
@@ -92,18 +95,14 @@ public class BorrowService {
         return new BusinessException(sb.toString().trim());
     }
 
-    private List<Borrow> findConflictsInternal(Long equipmentId, LocalDateTime startTime, LocalDateTime endTime, Long excludeBorrowId, boolean withLock) {
+    private List<Borrow> findConflictsInternal(Long equipmentId, LocalDateTime startTime, LocalDateTime endTime, Long excludeBorrowId) {
         if (equipmentId == null || startTime == null || endTime == null) {
             return java.util.Collections.emptyList();
         }
         if (startTime.isAfter(endTime) || startTime.isEqual(endTime)) {
             return java.util.Collections.emptyList();
         }
-        if (withLock) {
-            return borrowRepository.findConflictsWithLock(equipmentId, startTime, endTime, excludeBorrowId);
-        } else {
-            return borrowRepository.findConflicts(equipmentId, startTime, endTime, excludeBorrowId);
-        }
+        return borrowRepository.findConflicts(equipmentId, startTime, endTime, excludeBorrowId);
     }
 
     @Transactional

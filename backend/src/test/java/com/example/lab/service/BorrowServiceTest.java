@@ -78,12 +78,8 @@ class BorrowServiceTest {
                 isNull()
         )).thenReturn(Collections.emptyList());
 
-        when(borrowRepository.findConflictsWithLock(
-                eq(testEquipment.getId()),
-                any(LocalDateTime.class),
-                any(LocalDateTime.class),
-                isNull()
-        )).thenReturn(Collections.emptyList());
+        when(equipmentRepository.findByIdWithLock(eq(testEquipment.getId())))
+                .thenReturn(Optional.of(testEquipment));
 
         Borrow savedBorrow = new Borrow();
         savedBorrow.setId(1L);
@@ -96,18 +92,13 @@ class BorrowServiceTest {
 
         assertNotNull(result);
         assertEquals("PENDING", result.getStatus());
-        verify(borrowRepository).findConflicts(
+        verify(borrowRepository, times(2)).findConflicts(
                 eq(testEquipment.getId()),
                 any(LocalDateTime.class),
                 any(LocalDateTime.class),
                 isNull()
         );
-        verify(borrowRepository).findConflictsWithLock(
-                eq(testEquipment.getId()),
-                any(LocalDateTime.class),
-                any(LocalDateTime.class),
-                isNull()
-        );
+        verify(equipmentRepository).findByIdWithLock(eq(testEquipment.getId()));
         verify(borrowRepository).save(any(Borrow.class));
     }
 
@@ -138,10 +129,9 @@ class BorrowServiceTest {
             borrowService.apply(newBorrow);
         });
         assertTrue(exception.getMessage().contains("冲突记录"));
+        assertFalse(exception.getMessage().contains("其他用户同时提交申请"));
 
-        verify(borrowRepository, never()).findConflictsWithLock(
-                any(), any(), any(), any()
-        );
+        verify(equipmentRepository, never()).findByIdWithLock(any());
         verify(borrowRepository, never()).save(any(Borrow.class));
     }
 
@@ -166,14 +156,11 @@ class BorrowServiceTest {
                 any(LocalDateTime.class),
                 any(LocalDateTime.class),
                 isNull()
-        )).thenReturn(Collections.emptyList());
+        )).thenReturn(Collections.emptyList())
+          .thenReturn(Arrays.asList(conflictingBorrow));
 
-        when(borrowRepository.findConflictsWithLock(
-                eq(testEquipment.getId()),
-                any(LocalDateTime.class),
-                any(LocalDateTime.class),
-                isNull()
-        )).thenReturn(Arrays.asList(conflictingBorrow));
+        when(equipmentRepository.findByIdWithLock(eq(testEquipment.getId())))
+                .thenReturn(Optional.of(testEquipment));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
             borrowService.apply(newBorrow);
@@ -181,18 +168,77 @@ class BorrowServiceTest {
         assertTrue(exception.getMessage().contains("其他用户同时提交申请"));
         assertTrue(exception.getMessage().contains("请调整时间后重新提交"));
 
-        verify(borrowRepository).findConflicts(
+        verify(borrowRepository, times(2)).findConflicts(
                 eq(testEquipment.getId()),
                 any(LocalDateTime.class),
                 any(LocalDateTime.class),
                 isNull()
         );
-        verify(borrowRepository).findConflictsWithLock(
-                eq(testEquipment.getId()),
+        verify(equipmentRepository).findByIdWithLock(eq(testEquipment.getId()));
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testApply_WithNonNormalEquipment_ShouldThrowException() {
+        Borrow newBorrow = new Borrow();
+        Equipment borrowedEquipment = new Equipment();
+        borrowedEquipment.setId(2L);
+        borrowedEquipment.setName("已借出设备");
+        borrowedEquipment.setStatus("BORROWED");
+        newBorrow.setEquipment(borrowedEquipment);
+        newBorrow.setStartTime(LocalDateTime.now().plusDays(3));
+        newBorrow.setEndTime(LocalDateTime.now().plusDays(4));
+
+        when(borrowRepository.findConflicts(
+                eq(borrowedEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                isNull()
+        )).thenReturn(Collections.emptyList());
+
+        when(equipmentRepository.findByIdWithLock(eq(borrowedEquipment.getId())))
+                .thenReturn(Optional.of(borrowedEquipment));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.apply(newBorrow);
+        });
+        assertTrue(exception.getMessage().contains("设备当前状态不可借用"));
+
+        verify(equipmentRepository).findByIdWithLock(eq(borrowedEquipment.getId()));
+        verify(borrowRepository, times(1)).findConflicts(
+                eq(borrowedEquipment.getId()),
                 any(LocalDateTime.class),
                 any(LocalDateTime.class),
                 isNull()
         );
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testApply_WithNonExistentEquipment_ShouldThrowException() {
+        Borrow newBorrow = new Borrow();
+        Equipment nonExistEquipment = new Equipment();
+        nonExistEquipment.setId(999L);
+        newBorrow.setEquipment(nonExistEquipment);
+        newBorrow.setStartTime(LocalDateTime.now().plusDays(3));
+        newBorrow.setEndTime(LocalDateTime.now().plusDays(4));
+
+        when(borrowRepository.findConflicts(
+                eq(nonExistEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                isNull()
+        )).thenReturn(Collections.emptyList());
+
+        when(equipmentRepository.findByIdWithLock(eq(nonExistEquipment.getId())))
+                .thenReturn(Optional.empty());
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.apply(newBorrow);
+        });
+        assertTrue(exception.getMessage().contains("设备不存在"));
+
+        verify(equipmentRepository).findByIdWithLock(eq(nonExistEquipment.getId()));
         verify(borrowRepository, never()).save(any(Borrow.class));
     }
 
