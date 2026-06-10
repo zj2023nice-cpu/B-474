@@ -1,5 +1,6 @@
 package com.example.lab.service;
 
+import com.example.lab.constant.RoleConstant;
 import com.example.lab.dto.BorrowQuery;
 import com.example.lab.dto.ConflictCheckResult;
 import com.example.lab.entity.Borrow;
@@ -15,6 +16,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -43,8 +47,22 @@ public class BorrowService {
         return result;
     }
 
+    private void checkCanApplyOrManage() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new BusinessException("请先登录");
+        }
+        boolean hasPermission = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role -> role.equals(RoleConstant.ROLE_ADMIN) || role.equals(RoleConstant.ROLE_TEACHER));
+        if (!hasPermission) {
+            throw new BusinessException("权限不足：仅教师和管理员可发起借用申请");
+        }
+    }
+
     @Transactional
     public Borrow apply(Borrow borrow) {
+        checkCanApplyOrManage();
         ConflictCheckResult preCheckResult = checkConflicts(
                 borrow.getEquipment().getId(),
                 borrow.getStartTime(),
@@ -169,6 +187,7 @@ public class BorrowService {
 
     @Transactional
     public Borrow returnEquipment(Long borrowId) {
+        checkCanApplyOrManage();
         Borrow borrow = borrowRepository.findById(borrowId)
                 .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
 

@@ -1,7 +1,10 @@
 <template>
   <div>
     <div class="header-actions">
-      <el-button v-if="isTeacher" type="primary" @click="showReportDialog">申请报修</el-button>
+      <el-button v-if="canReport" type="primary" @click="showReportDialog">申请报修</el-button>
+      <el-alert v-if="isStudent" type="info" :closable="false" show-icon class="student-tip">
+        <template #title>学生账号仅可查看维修记录，如需报修请联系教师</template>
+      </el-alert>
       <el-select v-model="searchForm.status" placeholder="状态筛选" style="width: 120px; margin-left: 10px" clearable @clear="handleSearch">
         <el-option label="已上报" value="REPORTED" />
         <el-option label="维修中" value="IN_PROGRESS" />
@@ -220,6 +223,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'ADMIN')
 const isTeacher = computed(() => userStore.role === 'TEACHER')
+const canReport = computed(() => isAdmin.value || isTeacher.value)
+const isStudent = computed(() => userStore.role === 'STUDENT')
 
 const equipments = ref([])
 const reportDialogVisible = ref(false)
@@ -449,6 +454,11 @@ onMounted(fetchRepairs)
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+}
+
+.student-tip {
+  flex: 1;
+  min-width: 280px;
 }
 
 .pagination-container {

@@ -1,5 +1,6 @@
 package com.example.lab.service;
 
+import com.example.lab.constant.RoleConstant;
 import com.example.lab.dto.FinishRepairRequest;
 import com.example.lab.dto.RepairQuery;
 import com.example.lab.entity.Equipment;
@@ -14,6 +15,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -38,8 +42,22 @@ public class RepairService {
     @Autowired
     private EquipmentRepository equipmentRepository;
 
+    private void checkCanReportOrManage() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new BusinessException("请先登录");
+        }
+        boolean hasPermission = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role -> role.equals(RoleConstant.ROLE_ADMIN) || role.equals(RoleConstant.ROLE_TEACHER));
+        if (!hasPermission) {
+            throw new BusinessException("权限不足：仅教师和管理员可发起报修");
+        }
+    }
+
     @Transactional
     public Repair report(Repair repair) {
+        checkCanReportOrManage();
         repair.setStatus(STATUS_REPORTED);
         repair.setReportDate(LocalDateTime.now());
         repair.setRepairConclusion(null);

@@ -35,7 +35,7 @@ public class RepairController {
         return ApiResponse.success(repair);
     }
 
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
     @PostMapping
     public ApiResponse<Repair> report(@Valid @RequestBody Repair repair) {
         Repair savedRepair = repairService.report(repair);

@@ -42,12 +42,14 @@ const router = createRouter({
         {
           path: 'users',
           name: 'users',
-          component: () => import('../views/UserList.vue')
+          component: () => import('../views/UserList.vue'),
+          meta: { roles: ['ADMIN'] }
         },
         {
           path: 'expiring',
           name: 'expiring',
-          component: () => import('../views/ExpiringEquipments.vue')
+          component: () => import('../views/ExpiringEquipments.vue'),
+          meta: { roles: ['ADMIN', 'TEACHER'] }
         },
         {
           path: 'reminders',
@@ -68,9 +70,16 @@ router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
   if (to.name !== 'login' && !userStore.isLoggedIn) {
     next({ name: 'login' })
-  } else {
-    next()
+    return
   }
+  if (to.meta?.roles && to.meta.roles.length > 0) {
+    const hasRole = to.meta.roles.includes(userStore.role)
+    if (!hasRole) {
+      next({ name: 'dashboard' })
+      return
+    }
+  }
+  next()
 })
 
 export default router

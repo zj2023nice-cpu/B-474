@@ -1,7 +1,10 @@
 <template>
   <div>
     <div class="header-actions">
-      <el-button v-if="isTeacher" type="primary" @click="showApplyDialog">申请借用</el-button>
+      <el-button v-if="canApply" type="primary" @click="showApplyDialog">申请借用</el-button>
+      <el-alert v-if="isStudent" type="info" :closable="false" show-icon class="student-tip">
+        <template #title>学生账号仅可查看借用记录，如需申请请联系教师</template>
+      </el-alert>
       <el-select v-model="searchForm.status" placeholder="状态筛选" style="width: 130px; margin-left: 10px" clearable @change="handleSearch">
         <el-option label="待审批" value="PENDING" />
         <el-option label="已批准" value="APPROVED" />
@@ -53,7 +56,7 @@
           <div v-if="scope.row.status === 'PENDING' && (isAdmin || scope.row.applicant?.id === userStore.user.id)">
             <el-button type="warning" size="small" @click="handleCancel(scope.row)">取消</el-button>
           </div>
-          <div v-if="scope.row.status === 'APPROVED' && (isAdmin || isTeacher)">
+          <div v-if="scope.row.status === 'APPROVED' && canApply">
             <el-button type="primary" size="small" @click="handleReturn(scope.row)">归还</el-button>
           </div>
         </template>
@@ -166,6 +169,8 @@ import BorrowApprovalDialog from '../components/BorrowApprovalDialog.vue'
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'ADMIN')
 const isTeacher = computed(() => userStore.role === 'TEACHER')
+const canApply = computed(() => isAdmin.value || isTeacher.value)
+const isStudent = computed(() => userStore.role === 'STUDENT')
 
 const canCheckConflict = computed(() => {
   return form.value.equipmentId &&
@@ -419,6 +424,12 @@ onMounted(fetchBorrows)
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
+}
+
+.student-tip {
+  flex: 1;
+  min-width: 280px;
 }
 
 .pagination-container {

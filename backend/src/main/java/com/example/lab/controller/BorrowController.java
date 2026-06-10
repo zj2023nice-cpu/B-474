@@ -32,7 +32,7 @@ public class BorrowController {
         return ApiResponse.success(response);
     }
 
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
     @GetMapping("/check-conflicts")
     public ApiResponse<ConflictCheckResult> checkConflicts(
             @RequestParam Long equipmentId,
@@ -43,7 +43,7 @@ public class BorrowController {
         return ApiResponse.success(result);
     }
 
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
     @PostMapping
     public ApiResponse<Borrow> apply(@Valid @RequestBody Borrow borrow) {
         Borrow savedBorrow = borrowService.apply(borrow);
@@ -66,7 +66,7 @@ public class BorrowController {
         return ApiResponse.success("已拒绝", rejectedBorrow);
     }
 
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
     @PutMapping("/{id}/return")
     public ApiResponse<Borrow> returnEquipment(@PathVariable Long id) {
         Borrow returnedBorrow = borrowService.returnEquipment(id);
