@@ -2,7 +2,7 @@
   <div>
     <div class="header-actions">
       <el-button v-if="isTeacher" type="primary" @click="showApplyDialog">申请借用</el-button>
-      <el-select v-model="searchForm.status" placeholder="状态筛选" style="width: 120px; margin-left: 10px" clearable @clear="handleSearch">
+      <el-select v-model="searchForm.status" placeholder="状态筛选" style="width: 130px; margin-left: 10px" clearable @change="handleSearch">
         <el-option label="待审批" value="PENDING" />
         <el-option label="已批准" value="APPROVED" />
         <el-option label="已归还" value="RETURNED" />
@@ -12,10 +12,14 @@
       <el-button style="margin-left: 10px" @click="resetSearch">重置</el-button>
     </div>
 
-    <el-table :data="pageData.content" style="width: 100%">
+    <el-table :data="pageData.content" style="width: 100%" v-loading="loading">
       <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="equipment.name" label="设备" />
-      <el-table-column prop="applicant.name" label="申请人" />
+      <el-table-column prop="equipment.name" label="设备" min-width="100">
+        <template #default="scope">{{ scope.row.equipment?.name || '-' }}</template>
+      </el-table-column>
+      <el-table-column prop="applicant.name" label="申请人" width="90">
+        <template #default="scope">{{ scope.row.applicant?.name || '-' }}</template>
+      </el-table-column>
       <el-table-column prop="startTime" label="开始时间" width="160" />
       <el-table-column prop="endTime" label="结束时间" width="160" />
       <el-table-column prop="status" label="状态" width="90">
@@ -23,27 +27,30 @@
           <el-tag :type="getStatusType(scope.row.status)">{{ getStatusText(scope.row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="审批信息" min-width="200">
+      <el-table-column label="审批人" width="90">
         <template #default="scope">
-          <template v-if="scope.row.status === 'APPROVED' || scope.row.status === 'RETURNED'">
-            <div class="approval-info">审批人：{{ scope.row.approver?.name || '-' }}</div>
-            <div class="approval-info">审批时间：{{ scope.row.approveTime || '-' }}</div>
-          </template>
-          <template v-else-if="scope.row.status === 'REJECTED'">
-            <div class="approval-info">审批人：{{ scope.row.approver?.name || '-' }}</div>
-            <div class="approval-info">拒绝时间：{{ scope.row.rejectTime || '-' }}</div>
-            <div class="approval-info reject-reason">原因：{{ scope.row.rejectReason || '-' }}</div>
-          </template>
-          <span v-else>-</span>
+          <span>{{ scope.row.approver?.name || '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="250">
+      <el-table-column label="审批时间" width="160">
+        <template #default="scope">
+          <span>{{ scope.row.approveTime || scope.row.rejectTime || '-' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="拒绝原因" min-width="150">
+        <template #default="scope">
+          <span :class="{ 'reject-reason': scope.row.rejectReason }">
+            {{ scope.row.rejectReason || '-' }}
+          </span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="250" fixed="right">
         <template #default="scope">
           <div v-if="isAdmin && scope.row.status === 'PENDING'">
             <el-button type="success" size="small" @click="handleApprove(scope.row)">批准</el-button>
             <el-button type="danger" size="small" @click="handleReject(scope.row)">拒绝</el-button>
           </div>
-          <div v-if="scope.row.status === 'PENDING' && (isAdmin || scope.row.applicant.id === userStore.user.id)">
+          <div v-if="scope.row.status === 'PENDING' && (isAdmin || scope.row.applicant?.id === userStore.user.id)">
             <el-button type="warning" size="small" @click="handleCancel(scope.row)">取消</el-button>
           </div>
           <div v-if="scope.row.status === 'APPROVED' && (isAdmin || isTeacher)">
@@ -122,6 +129,7 @@ const equipments = ref([])
 const dialogVisible = ref(false)
 const form = ref({})
 const dateRange = ref([])
+const loading = ref(false)
 
 const approvalDialogVisible = ref(false)
 const approvalAction = ref('')
@@ -148,22 +156,27 @@ const searchForm = reactive({
 })
 
 const fetchBorrows = async () => {
-  const params = {
-    page: pagination.currentPage,
-    size: pagination.pageSize
-  }
+  loading.value = true
+  try {
+    const params = {
+      page: pagination.currentPage,
+      size: pagination.pageSize
+    }
 
-  if (isTeacher.value) {
-    params.userId = userStore.user.id
-  }
+    if (isTeacher.value) {
+      params.userId = userStore.user.id
+    }
 
-  if (searchForm.status) {
-    params.status = searchForm.status
-  }
+    if (searchForm.status) {
+      params.status = searchForm.status
+    }
 
-  const response = await request.get('/borrows', { params })
-  pageData.value = response
-  pagination.total = response.totalElements
+    const response = await request.get('/borrows', { params })
+    pageData.value = response
+    pagination.total = response.totalElements
+  } finally {
+    loading.value = false
+  }
 }
 
 const handleSearch = () => {
@@ -179,6 +192,7 @@ const resetSearch = () => {
 
 const handleSizeChange = (size) => {
   pagination.pageSize = size
+  pagination.currentPage = 1
   fetchBorrows()
 }
 
@@ -240,10 +254,10 @@ const handleApprovalConfirm = async ({ action, rejectReason }) => {
   const id = approvalRecord.value.id
   try {
     if (action === 'approve') {
-      await request.put(`/borrows/${id}/approve?approverId=${userStore.user.id}`)
+      await request.put(`/borrows/${id}/approve`)
       ElMessage.success('已批准')
     } else {
-      await request.put(`/borrows/${id}/reject?approverId=${userStore.user.id}&rejectReason=${encodeURIComponent(rejectReason)}`)
+      await request.put(`/borrows/${id}/reject`, { rejectReason })
       ElMessage.success('已拒绝')
     }
     fetchBorrows()
@@ -274,7 +288,8 @@ const getStatusType = (status) => {
   if (status === 'APPROVED') return 'success'
   if (status === 'PENDING') return 'warning'
   if (status === 'RETURNED') return 'info'
-  return 'danger'
+  if (status === 'REJECTED') return 'danger'
+  return 'info'
 }
 
 const getStatusText = (status) => {
@@ -282,7 +297,7 @@ const getStatusText = (status) => {
   if (status === 'PENDING') return '待审批'
   if (status === 'RETURNED') return '已归还'
   if (status === 'REJECTED') return '已拒绝'
-  return status
+  return status || '-'
 }
 
 onMounted(fetchBorrows)
@@ -300,12 +315,6 @@ onMounted(fetchBorrows)
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
-}
-
-.approval-info {
-  font-size: 12px;
-  line-height: 1.6;
-  color: #606266;
 }
 
 .reject-reason {
