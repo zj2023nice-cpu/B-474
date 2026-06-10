@@ -14,8 +14,6 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -53,16 +51,14 @@ public class BorrowController {
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
     @PutMapping("/{id}/approve")
     public ApiResponse<Borrow> approve(@PathVariable Long id) {
-        Long approverId = getCurrentUserId();
-        Borrow approvedBorrow = borrowService.approve(id, approverId);
+        Borrow approvedBorrow = borrowService.approve(id);
         return ApiResponse.success("审批通过", approvedBorrow);
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
     @PutMapping("/{id}/reject")
     public ApiResponse<Borrow> reject(@PathVariable Long id, @Valid @RequestBody ApprovalRequest request) {
-        Long approverId = getCurrentUserId();
-        Borrow rejectedBorrow = borrowService.reject(id, approverId, request.getRejectReason());
+        Borrow rejectedBorrow = borrowService.reject(id, request.getRejectReason());
         return ApiResponse.success("已拒绝", rejectedBorrow);
     }
 
@@ -78,10 +74,5 @@ public class BorrowController {
     public ApiResponse<Void> delete(@PathVariable Long id) {
         borrowService.delete(id);
         return ApiResponse.success("删除成功", null);
-    }
-
-    private Long getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (Long) authentication.getPrincipal();
     }
 }

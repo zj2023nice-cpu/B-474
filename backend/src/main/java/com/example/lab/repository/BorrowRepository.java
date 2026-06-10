@@ -6,9 +6,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -16,6 +18,10 @@ public interface BorrowRepository extends JpaRepository<Borrow, Long>, JpaSpecif
     List<Borrow> findByApplicant_Id(Long applicantId);
     List<Borrow> findByStatus(String status);
     List<Borrow> findByStatusOrderByApplyDateDesc(String status);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Borrow b WHERE b.id = :id")
+    Optional<Borrow> findByIdWithLock(@Param("id") Long id);
     
     long countByStatus(String status);
     

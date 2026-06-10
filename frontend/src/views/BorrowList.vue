@@ -47,17 +47,41 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column v-if="canApply" label="操作" width="250" fixed="right">
+      <el-table-column v-if="canApply" label="操作" width="280" fixed="right">
         <template #default="scope">
           <div v-if="isAdmin && scope.row.status === 'PENDING'">
-            <el-button type="success" size="small" @click="handleApprove(scope.row)">批准</el-button>
-            <el-button type="danger" size="small" @click="handleReject(scope.row)">拒绝</el-button>
+            <el-button 
+              type="success" 
+              size="small" 
+              :loading="approvalSubmitting" 
+              :disabled="approvalSubmitting"
+              @click="handleApprove(scope.row)"
+            >批准</el-button>
+            <el-button 
+              type="danger" 
+              size="small" 
+              :loading="approvalSubmitting" 
+              :disabled="approvalSubmitting"
+              @click="handleReject(scope.row)"
+            >拒绝</el-button>
           </div>
           <div v-if="scope.row.status === 'PENDING' && (isAdmin || scope.row.applicant?.id === userStore.user.id)">
-            <el-button type="warning" size="small" @click="handleCancel(scope.row)">取消</el-button>
+            <el-button 
+              type="warning" 
+              size="small" 
+              :loading="cancelling && scope.row.id === currentActionId"
+              :disabled="cancelling"
+              @click="handleCancel(scope.row)"
+            >取消</el-button>
           </div>
           <div v-if="scope.row.status === 'APPROVED'">
-            <el-button type="primary" size="small" @click="handleReturn(scope.row)">归还</el-button>
+            <el-button 
+              type="primary" 
+              size="small" 
+              :loading="returning && scope.row.id === currentActionId"
+              :disabled="returning"
+              @click="handleReturn(scope.row)"
+            >归还</el-button>
           </div>
         </template>
       </el-table-column>
@@ -154,6 +178,7 @@
       v-model="approvalDialogVisible"
       :action="approvalAction"
       :borrow-record="approvalRecord"
+      :submitting="approvalSubmitting"
       @confirm="handleApprovalConfirm"
     />
   </div>
@@ -194,6 +219,8 @@ const approvalDialogVisible = ref(false)
 const approvalAction = ref('')
 const approvalRecord = ref(null)
 const approvalDialogRef = ref(null)
+const approvalSubmitting = ref(false)
+const currentActionId = ref(null)
 
 const pageData = ref({
   content: [],
@@ -354,48 +381,121 @@ const handleSubmit = async () => {
 }
 
 const handleApprove = (row) => {
+  if (approvalSubmitting.value) return
+  if (row.status !== 'PENDING') {
+    ElMessage.warning('当前状态无法审批')
+    fetchBorrows()
+    return
+  }
   approvalAction.value = 'approve'
-  approvalRecord.value = row
+  approvalRecord.value = { ...row }
   approvalDialogVisible.value = true
 }
 
 const handleReject = (row) => {
+  if (approvalSubmitting.value) return
+  if (row.status !== 'PENDING') {
+    ElMessage.warning('当前状态无法审批')
+    fetchBorrows()
+    return
+  }
   approvalAction.value = 'reject'
-  approvalRecord.value = row
+  approvalRecord.value = { ...row }
   approvalDialogVisible.value = true
 }
 
 const handleApprovalConfirm = async ({ action, rejectReason }) => {
-  const id = approvalRecord.value.id
+  if (approvalSubmitting.value) return
+  
+  const id = approvalRecord.value?.id
+  if (!id) return
+
+  approvalSubmitting.value = true
+  
   try {
+    let result
     if (action === 'approve') {
-      await request.put(`/borrows/${id}/approve`)
+      result = await request.put(`/borrows/${id}/approve`)
     } else {
-      await request.put(`/borrows/${id}/reject`, { rejectReason })
+      result = await request.put(`/borrows/${id}/reject`, { rejectReason })
     }
+    
     approvalDialogRef.value?.handleSuccess()
-    fetchBorrows()
+    
+    const idx = pageData.value.content.findIndex(item => item.id === id)
+    if (idx !== -1 && result) {
+      pageData.value.content.splice(idx, 1, result)
+    }
+    
+    await fetchBorrows()
+    
     ElMessage.success(action === 'approve' ? '已批准' : '已拒绝')
   } catch (e) {
     approvalDialogRef.value?.handleError(e.message || '操作失败，请重试')
+    fetchBorrows()
+  } finally {
+    approvalSubmitting.value = false
   }
 }
 
+const returning = ref(false)
+
 const handleReturn = async (row) => {
-  await request.put(`/borrows/${row.id}/return`)
-  fetchBorrows()
-  ElMessage.success('已归还')
+  if (returning.value) return
+  if (row.status !== 'APPROVED') {
+    ElMessage.warning('当前状态无法归还')
+    fetchBorrows()
+    return
+  }
+  
+  currentActionId.value = row.id
+  returning.value = true
+  try {
+    const result = await request.put(`/borrows/${row.id}/return`)
+    
+    const idx = pageData.value.content.findIndex(item => item.id === row.id)
+    if (idx !== -1 && result) {
+      pageData.value.content.splice(idx, 1, result)
+    }
+    
+    await fetchBorrows()
+    ElMessage.success('已归还')
+  } catch (e) {
+    fetchBorrows()
+  } finally {
+    returning.value = false
+    currentActionId.value = null
+  }
 }
 
+const cancelling = ref(false)
+
 const handleCancel = (row) => {
+  if (cancelling.value) return
+  if (row.status !== 'PENDING') {
+    ElMessage.warning('当前状态无法取消')
+    fetchBorrows()
+    return
+  }
+  
   ElMessageBox.confirm('确认取消申请？', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(async () => {
-    await request.delete(`/borrows/${row.id}`)
-    fetchBorrows()
-    ElMessage.success('已取消')
+    currentActionId.value = row.id
+    cancelling.value = true
+    try {
+      await request.delete(`/borrows/${row.id}`)
+      await fetchBorrows()
+      ElMessage.success('已取消')
+    } finally {
+      cancelling.value = false
+      currentActionId.value = null
+    }
+  }).catch(() => {
+    cancelling.value = false
+    currentActionId.value = null
   })
 }
 

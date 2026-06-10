@@ -1,5 +1,6 @@
 package com.example.lab.service;
 
+import com.example.lab.constant.RoleConstant;
 import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.User;
@@ -7,18 +8,25 @@ import com.example.lab.exception.BusinessException;
 import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.UserRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -36,6 +44,12 @@ class BorrowServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private Authentication authentication;
+
+    @Mock
+    private SecurityContext securityContext;
 
     @InjectMocks
     private BorrowService borrowService;
@@ -62,6 +76,19 @@ class BorrowServiceTest {
         testApprover.setId(2L);
         testApprover.setName("管理员");
         testApprover.setRole("ADMIN");
+
+        Collection<GrantedAuthority> authorities = Arrays.asList(
+            new SimpleGrantedAuthority(RoleConstant.ROLE_ADMIN)
+        );
+        lenient().when(securityContext.getAuthentication()).thenReturn(authentication);
+        lenient().when(authentication.getPrincipal()).thenReturn(2L);
+        lenient().when(authentication.getAuthorities()).thenAnswer(inv -> authorities);
+        SecurityContextHolder.setContext(securityContext);
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -294,18 +321,17 @@ class BorrowServiceTest {
     @Test
     void testApprove_ShouldSetStatusApprovedAndUpdateEquipment() {
         Long borrowId = 1L;
-        Long approverId = 2L;
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
         pendingBorrow.setStatus("PENDING");
         pendingBorrow.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(pendingBorrow));
-        when(userRepository.findById(approverId)).thenReturn(Optional.of(testApprover));
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(testApprover));
         when(borrowRepository.save(pendingBorrow)).thenReturn(pendingBorrow);
 
-        Borrow result = borrowService.approve(borrowId, approverId);
+        Borrow result = borrowService.approve(borrowId);
 
         assertNotNull(result);
         assertEquals("APPROVED", result.getStatus());
@@ -314,36 +340,72 @@ class BorrowServiceTest {
         assertNull(result.getRejectReason());
         assertNull(result.getRejectTime());
 
-        verify(borrowRepository).findById(borrowId);
-        verify(userRepository).findById(approverId);
+        verify(borrowRepository).findByIdWithLock(borrowId);
+        verify(userRepository).findById(2L);
         verify(equipmentRepository).save(testEquipment);
         verify(borrowRepository).save(pendingBorrow);
     }
 
     @Test
-    void testApprove_NonPendingStatus_ShouldThrowBusinessException() {
+    void testApprove_AlreadyApprovedStatus_ShouldThrowBusinessException() {
         Long borrowId = 1L;
-        Long approverId = 2L;
 
         Borrow approvedBorrow = new Borrow();
         approvedBorrow.setId(borrowId);
         approvedBorrow.setStatus("APPROVED");
         approvedBorrow.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(approvedBorrow));
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
-            borrowService.approve(borrowId, approverId);
+            borrowService.approve(borrowId);
         });
-        assertTrue(exception.getMessage().contains("当前状态不允许审批"));
+        assertTrue(exception.getMessage().contains("已被批准"));
 
         verify(borrowRepository, never()).save(any(Borrow.class));
     }
 
     @Test
-    void testApprove_AlreadyApproved_ShouldThrowBusinessException() {
+    void testApprove_AlreadyRejectedStatus_ShouldThrowBusinessException() {
         Long borrowId = 1L;
-        Long approverId = 2L;
+
+        Borrow rejectedBorrow = new Borrow();
+        rejectedBorrow.setId(borrowId);
+        rejectedBorrow.setStatus("REJECTED");
+        rejectedBorrow.setEquipment(testEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(rejectedBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.approve(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("已被拒绝"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testApprove_AlreadyReturnedStatus_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+
+        Borrow returnedBorrow = new Borrow();
+        returnedBorrow.setId(borrowId);
+        returnedBorrow.setStatus("RETURNED");
+        returnedBorrow.setEquipment(testEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(returnedBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.approve(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("已归还"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testApprove_AlreadyHasApprover_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
 
         Borrow alreadyApproved = new Borrow();
         alreadyApproved.setId(borrowId);
@@ -351,10 +413,10 @@ class BorrowServiceTest {
         alreadyApproved.setApprover(testApprover);
         alreadyApproved.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(alreadyApproved));
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(alreadyApproved));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
-            borrowService.approve(borrowId, approverId);
+            borrowService.approve(borrowId);
         });
         assertTrue(exception.getMessage().contains("已被审批"));
 
@@ -364,7 +426,6 @@ class BorrowServiceTest {
     @Test
     void testReject_ShouldSetStatusRejectedAndRejectReason() {
         Long borrowId = 1L;
-        Long approverId = 2L;
         String rejectReason = "设备维护中";
 
         Borrow pendingBorrow = new Borrow();
@@ -372,11 +433,11 @@ class BorrowServiceTest {
         pendingBorrow.setStatus("PENDING");
         pendingBorrow.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(pendingBorrow));
-        when(userRepository.findById(approverId)).thenReturn(Optional.of(testApprover));
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(testApprover));
         when(borrowRepository.save(pendingBorrow)).thenReturn(pendingBorrow);
 
-        Borrow result = borrowService.reject(borrowId, approverId, rejectReason);
+        Borrow result = borrowService.reject(borrowId, rejectReason);
 
         assertNotNull(result);
         assertEquals("REJECTED", result.getStatus());
@@ -385,27 +446,45 @@ class BorrowServiceTest {
         assertNotNull(result.getRejectTime());
         assertNull(result.getApproveTime());
 
-        verify(borrowRepository).findById(borrowId);
-        verify(userRepository).findById(approverId);
+        verify(borrowRepository).findByIdWithLock(borrowId);
+        verify(userRepository).findById(2L);
         verify(borrowRepository).save(pendingBorrow);
     }
 
     @Test
-    void testReject_NonPendingStatus_ShouldThrowBusinessException() {
+    void testReject_AlreadyRejectedStatus_ShouldThrowBusinessException() {
         Long borrowId = 1L;
-        Long approverId = 2L;
 
         Borrow rejectedBorrow = new Borrow();
         rejectedBorrow.setId(borrowId);
         rejectedBorrow.setStatus("REJECTED");
         rejectedBorrow.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(rejectedBorrow));
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(rejectedBorrow));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
-            borrowService.reject(borrowId, approverId, "原因");
+            borrowService.reject(borrowId, "原因");
         });
-        assertTrue(exception.getMessage().contains("当前状态不允许审批"));
+        assertTrue(exception.getMessage().contains("已被拒绝"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testReject_AlreadyApprovedStatus_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+
+        Borrow approvedBorrow = new Borrow();
+        approvedBorrow.setId(borrowId);
+        approvedBorrow.setStatus("APPROVED");
+        approvedBorrow.setEquipment(testEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.reject(borrowId, "原因");
+        });
+        assertTrue(exception.getMessage().contains("已被批准"));
 
         verify(borrowRepository, never()).save(any(Borrow.class));
     }
@@ -413,17 +492,14 @@ class BorrowServiceTest {
     @Test
     void testReject_BlankRejectReason_ShouldThrowBusinessException() {
         Long borrowId = 1L;
-        Long approverId = 2L;
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
         pendingBorrow.setStatus("PENDING");
         pendingBorrow.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(pendingBorrow));
-
         BusinessException exception = assertThrows(BusinessException.class, () -> {
-            borrowService.reject(borrowId, approverId, "");
+            borrowService.reject(borrowId, "");
         });
         assertTrue(exception.getMessage().contains("拒绝原因不能为空"));
 
@@ -433,17 +509,14 @@ class BorrowServiceTest {
     @Test
     void testReject_NullRejectReason_ShouldThrowBusinessException() {
         Long borrowId = 1L;
-        Long approverId = 2L;
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
         pendingBorrow.setStatus("PENDING");
         pendingBorrow.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(pendingBorrow));
-
         BusinessException exception = assertThrows(BusinessException.class, () -> {
-            borrowService.reject(borrowId, approverId, null);
+            borrowService.reject(borrowId, null);
         });
         assertTrue(exception.getMessage().contains("拒绝原因不能为空"));
 
@@ -451,9 +524,8 @@ class BorrowServiceTest {
     }
 
     @Test
-    void testReject_AlreadyApproved_ShouldThrowBusinessException() {
+    void testReject_AlreadyHasApprover_ShouldThrowBusinessException() {
         Long borrowId = 1L;
-        Long approverId = 2L;
 
         Borrow alreadyApproved = new Borrow();
         alreadyApproved.setId(borrowId);
@@ -461,10 +533,10 @@ class BorrowServiceTest {
         alreadyApproved.setApprover(testApprover);
         alreadyApproved.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(alreadyApproved));
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(alreadyApproved));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
-            borrowService.reject(borrowId, approverId, "原因");
+            borrowService.reject(borrowId, "原因");
         });
         assertTrue(exception.getMessage().contains("已被审批"));
 
@@ -484,7 +556,7 @@ class BorrowServiceTest {
         approvedBorrow.setStatus("APPROVED");
         approvedBorrow.setEquipment(borrowedEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(approvedBorrow));
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
         when(borrowRepository.save(approvedBorrow)).thenReturn(approvedBorrow);
 
         Borrow result = borrowService.returnEquipment(borrowId);
@@ -493,7 +565,7 @@ class BorrowServiceTest {
         assertEquals("RETURNED", result.getStatus());
         assertEquals("NORMAL", result.getEquipment().getStatus());
 
-        verify(borrowRepository).findById(borrowId);
+        verify(borrowRepository).findByIdWithLock(borrowId);
         verify(equipmentRepository).save(borrowedEquipment);
         verify(borrowRepository).save(approvedBorrow);
     }
@@ -507,7 +579,7 @@ class BorrowServiceTest {
         pendingBorrow.setStatus("PENDING");
         pendingBorrow.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(pendingBorrow));
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
             borrowService.returnEquipment(borrowId);
@@ -568,12 +640,11 @@ class BorrowServiceTest {
     @Test
     void testApprove_BorrowNotFound_ShouldThrowBusinessException() {
         Long borrowId = 999L;
-        Long approverId = 2L;
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.empty());
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.empty());
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
-            borrowService.approve(borrowId, approverId);
+            borrowService.approve(borrowId);
         });
         assertTrue(exception.getMessage().contains("借用记录不存在"));
 
@@ -583,12 +654,11 @@ class BorrowServiceTest {
     @Test
     void testReject_BorrowNotFound_ShouldThrowBusinessException() {
         Long borrowId = 999L;
-        Long approverId = 2L;
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.empty());
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.empty());
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
-            borrowService.reject(borrowId, approverId, "原因");
+            borrowService.reject(borrowId, "原因");
         });
         assertTrue(exception.getMessage().contains("借用记录不存在"));
 
@@ -598,7 +668,6 @@ class BorrowServiceTest {
     @Test
     void testReject_ReasonTooLong_ShouldThrowBusinessException() {
         Long borrowId = 1L;
-        Long approverId = 2L;
         String longReason = "a".repeat(501);
 
         Borrow pendingBorrow = new Borrow();
@@ -606,10 +675,8 @@ class BorrowServiceTest {
         pendingBorrow.setStatus("PENDING");
         pendingBorrow.setEquipment(testEquipment);
 
-        when(borrowRepository.findById(borrowId)).thenReturn(Optional.of(pendingBorrow));
-
         BusinessException exception = assertThrows(BusinessException.class, () -> {
-            borrowService.reject(borrowId, approverId, longReason);
+            borrowService.reject(borrowId, longReason);
         });
         assertTrue(exception.getMessage().contains("500"));
 

@@ -28,6 +28,12 @@ import java.util.List;
 
 @Service
 public class BorrowService {
+
+    private static final String STATUS_PENDING = "PENDING";
+    private static final String STATUS_APPROVED = "APPROVED";
+    private static final String STATUS_REJECTED = "REJECTED";
+    private static final String STATUS_RETURNED = "RETURNED";
+
     @Autowired
     private BorrowRepository borrowRepository;
 
@@ -60,6 +66,27 @@ public class BorrowService {
         }
     }
 
+    private void checkCanApprove() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new BusinessException("请先登录");
+        }
+        boolean hasPermission = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role -> role.equals(RoleConstant.ROLE_ADMIN) || role.equals(RoleConstant.ROLE_TEACHER));
+        if (!hasPermission) {
+            throw new BusinessException("权限不足：仅教师和管理员可审批借用申请");
+        }
+    }
+
+    private Long getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new BusinessException("请先登录");
+        }
+        return (Long) authentication.getPrincipal();
+    }
+
     @Transactional
     public Borrow apply(Borrow borrow) {
         checkCanApplyOrManage();
@@ -90,7 +117,8 @@ public class BorrowService {
             throw buildConflictException(finalCheckResult.getConflicts(), true);
         }
 
-        borrow.setStatus("PENDING");
+        borrow.setStatus(STATUS_PENDING);
+        borrow.setApplyDate(LocalDateTime.now());
         return borrowRepository.save(borrow);
     }
 
@@ -124,22 +152,19 @@ public class BorrowService {
     }
 
     @Transactional
-    public Borrow approve(Long borrowId, Long approverId) {
-        Borrow borrow = borrowRepository.findById(borrowId)
+    public Borrow approve(Long borrowId) {
+        checkCanApprove();
+        Long approverId = getCurrentUserId();
+
+        Borrow borrow = borrowRepository.findByIdWithLock(borrowId)
                 .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
 
-        if (!"PENDING".equals(borrow.getStatus())) {
-            throw new BusinessException("当前状态不允许审批，仅待审批状态的申请可以批准");
-        }
-
-        if (borrow.getApprover() != null) {
-            throw new BusinessException("该申请已被审批，请勿重复操作");
-        }
+        validateCanApprove(borrow);
 
         User approver = userRepository.findById(approverId)
                 .orElseThrow(() -> new BusinessException(404, "审批人不存在"));
 
-        borrow.setStatus("APPROVED");
+        borrow.setStatus(STATUS_APPROVED);
         borrow.setApprover(approver);
         borrow.setApproveTime(LocalDateTime.now());
         borrow.setRejectReason(null);
@@ -153,17 +178,9 @@ public class BorrowService {
     }
 
     @Transactional
-    public Borrow reject(Long borrowId, Long approverId, String rejectReason) {
-        Borrow borrow = borrowRepository.findById(borrowId)
-                .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
-
-        if (!"PENDING".equals(borrow.getStatus())) {
-            throw new BusinessException("当前状态不允许审批，仅待审批状态的申请可以拒绝");
-        }
-
-        if (borrow.getApprover() != null) {
-            throw new BusinessException("该申请已被审批，请勿重复操作");
-        }
+    public Borrow reject(Long borrowId, String rejectReason) {
+        checkCanApprove();
+        Long approverId = getCurrentUserId();
 
         if (!StringUtils.hasText(rejectReason)) {
             throw new BusinessException("拒绝原因不能为空");
@@ -173,10 +190,15 @@ public class BorrowService {
             throw new BusinessException("拒绝原因长度不能超过 500 个字符");
         }
 
+        Borrow borrow = borrowRepository.findByIdWithLock(borrowId)
+                .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
+
+        validateCanApprove(borrow);
+
         User approver = userRepository.findById(approverId)
                 .orElseThrow(() -> new BusinessException(404, "审批人不存在"));
 
-        borrow.setStatus("REJECTED");
+        borrow.setStatus(STATUS_REJECTED);
         borrow.setApprover(approver);
         borrow.setRejectReason(rejectReason.trim());
         borrow.setRejectTime(LocalDateTime.now());
@@ -185,17 +207,36 @@ public class BorrowService {
         return borrowRepository.save(borrow);
     }
 
+    private void validateCanApprove(Borrow borrow) {
+        String status = borrow.getStatus();
+        if (STATUS_APPROVED.equals(status)) {
+            throw new BusinessException("该申请已被批准，无需重复审批");
+        }
+        if (STATUS_REJECTED.equals(status)) {
+            throw new BusinessException("该申请已被拒绝，无法重复审批");
+        }
+        if (STATUS_RETURNED.equals(status)) {
+            throw new BusinessException("该借用已归还，无法审批");
+        }
+        if (!STATUS_PENDING.equals(status)) {
+            throw new BusinessException("当前状态不允许审批，仅待审批状态的申请可以审批");
+        }
+        if (borrow.getApprover() != null) {
+            throw new BusinessException("该申请已被审批，请勿重复操作");
+        }
+    }
+
     @Transactional
     public Borrow returnEquipment(Long borrowId) {
         checkCanApplyOrManage();
-        Borrow borrow = borrowRepository.findById(borrowId)
+        Borrow borrow = borrowRepository.findByIdWithLock(borrowId)
                 .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
 
-        if (!"APPROVED".equals(borrow.getStatus())) {
+        if (!STATUS_APPROVED.equals(borrow.getStatus())) {
             throw new BusinessException("当前状态不允许归还，仅已批准状态的借用可以归还");
         }
 
-        borrow.setStatus("RETURNED");
+        borrow.setStatus(STATUS_RETURNED);
 
         Equipment eq = borrow.getEquipment();
         eq.setStatus("NORMAL");

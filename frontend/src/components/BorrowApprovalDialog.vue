@@ -30,7 +30,7 @@
             placeholder="请填写拒绝原因（必填）"
             maxlength="500"
             show-word-limit
-            :disabled="submitting"
+            :disabled="isSubmitting"
           />
         </el-form-item>
       </el-form>
@@ -41,11 +41,11 @@
     </el-alert>
 
     <template #footer>
-      <el-button :disabled="submitting" @click="handleCancel">取消</el-button>
-      <el-button v-if="action === 'approve'" type="success" :loading="submitting" @click="handleConfirm">
+      <el-button :disabled="isSubmitting" @click="handleCancel">取消</el-button>
+      <el-button v-if="action === 'approve'" type="success" :loading="isSubmitting" :disabled="isSubmitting" @click="handleConfirm">
         确认批准
       </el-button>
-      <el-button v-if="action === 'reject'" type="danger" :loading="submitting" @click="handleConfirm">
+      <el-button v-if="action === 'reject'" type="danger" :loading="isSubmitting" :disabled="isSubmitting" @click="handleConfirm">
         确认拒绝
       </el-button>
     </template>
@@ -58,7 +58,8 @@ import { ref, computed, reactive, watch } from 'vue'
 const props = defineProps({
   modelValue: Boolean,
   action: String,
-  borrowRecord: Object
+  borrowRecord: Object,
+  submitting: Boolean
 })
 
 const emit = defineEmits(['update:modelValue', 'confirm'])
@@ -71,8 +72,9 @@ const visible = computed({
 const title = computed(() => props.action === 'approve' ? '批准借用申请' : '拒绝借用申请')
 
 const rejectFormRef = ref(null)
-const submitting = ref(false)
 const submitError = ref('')
+
+const isSubmitting = computed(() => props.submitting)
 
 const form = reactive({
   rejectReason: ''
@@ -90,29 +92,29 @@ watch(() => props.modelValue, (val) => {
   if (val) {
     form.rejectReason = ''
     submitError.value = ''
-    submitting.value = false
   }
 })
 
 const resetForm = () => {
   form.rejectReason = ''
   submitError.value = ''
-  submitting.value = false
 }
 
 const handleCancel = () => {
-  if (submitting.value) return
+  if (isSubmitting.value) return
   resetForm()
   visible.value = false
 }
 
 const handleBeforeClose = (done) => {
-  if (submitting.value) return
+  if (isSubmitting.value) return
   resetForm()
   done()
 }
 
 const handleConfirm = async () => {
+  if (isSubmitting.value) return
+  
   submitError.value = ''
 
   if (props.action === 'reject') {
@@ -123,7 +125,6 @@ const handleConfirm = async () => {
     }
   }
 
-  submitting.value = true
   emit('confirm', {
     action: props.action,
     rejectReason: form.rejectReason
@@ -137,7 +138,6 @@ const handleSuccess = () => {
 
 const handleError = (message) => {
   submitError.value = message || '操作失败，请重试'
-  submitting.value = false
 }
 
 defineExpose({ handleSuccess, handleError })

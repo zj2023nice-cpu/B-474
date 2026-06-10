@@ -16,6 +16,9 @@ public class Borrow {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Version
+    private Long version;
+
     @ManyToOne
     @JoinColumn(name = "equipment_id")
     @NotNull(message = "设备不能为空")
