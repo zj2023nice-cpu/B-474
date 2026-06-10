@@ -359,6 +359,7 @@ const canFinish = (row) => {
 
 const canCancel = (row) => {
   if (!row) return false
+  if (!canReport.value) return false
   if (row.status !== 'REPORTED') return false
   if (isAdmin.value) return true
   if (row.reporter?.id === userStore.user?.id) return true

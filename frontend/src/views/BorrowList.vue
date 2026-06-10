@@ -47,7 +47,7 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="250" fixed="right">
+      <el-table-column v-if="canApply" label="操作" width="250" fixed="right">
         <template #default="scope">
           <div v-if="isAdmin && scope.row.status === 'PENDING'">
             <el-button type="success" size="small" @click="handleApprove(scope.row)">批准</el-button>
@@ -56,7 +56,7 @@
           <div v-if="scope.row.status === 'PENDING' && (isAdmin || scope.row.applicant?.id === userStore.user.id)">
             <el-button type="warning" size="small" @click="handleCancel(scope.row)">取消</el-button>
           </div>
-          <div v-if="scope.row.status === 'APPROVED' && canApply">
+          <div v-if="scope.row.status === 'APPROVED'">
             <el-button type="primary" size="small" @click="handleReturn(scope.row)">归还</el-button>
           </div>
         </template>
