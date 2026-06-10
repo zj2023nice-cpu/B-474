@@ -165,6 +165,7 @@ public class EquipmentService {
             repairDTO.setReportDate(latestRepair.getReportDate());
             repairDTO.setRepairCompany(latestRepair.getRepairCompany());
             repairDTO.setCost(latestRepair.getCost());
+            repairDTO.setRepairConclusion(latestRepair.getRepairConclusion());
             repairDTO.setFinishDate(latestRepair.getFinishDate());
             repairDTO.setStatus(latestRepair.getStatus());
             repairDTO.setReporterName(latestRepair.getReporter() != null ? latestRepair.getReporter().getName() : null);

@@ -134,15 +134,23 @@
 
           <el-divider content-position="left">最近维修记录</el-divider>
           <el-descriptions v-if="detailData.latestRepair" :column="1" border>
-            <el-descriptions-item label="故障描述">{{ detailData.latestRepair.description || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="报修时间">{{ detailData.latestRepair.reportDate || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="报修人">{{ detailData.latestRepair.reporterName || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="维修公司">{{ detailData.latestRepair.repairCompany || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="维修费用">{{ detailData.latestRepair.cost != null ? `¥${detailData.latestRepair.cost}` : '-' }}</el-descriptions-item>
-            <el-descriptions-item label="完成时间">{{ detailData.latestRepair.finishDate || '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">
               <el-tag :type="getRepairStatusType(detailData.latestRepair.status)">{{ getRepairStatusText(detailData.latestRepair.status) }}</el-tag>
             </el-descriptions-item>
+            <el-descriptions-item label="故障描述">{{ detailData.latestRepair.description || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="报修时间">{{ detailData.latestRepair.reportDate || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="报修人">{{ detailData.latestRepair.reporterName || '-' }}</el-descriptions-item>
+            <template v-if="detailData.latestRepair.status === 'FINISHED'">
+              <el-descriptions-item label="维修结论">{{ detailData.latestRepair.repairConclusion || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="维修单位">{{ detailData.latestRepair.repairCompany || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="维修费用">
+                <span v-if="detailData.latestRepair.cost !== null && detailData.latestRepair.cost !== undefined">
+                  ¥{{ Number(detailData.latestRepair.cost).toFixed(2) }}
+                </span>
+                <span v-else>-</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="完成时间">{{ detailData.latestRepair.finishDate || '-' }}</el-descriptions-item>
+            </template>
           </el-descriptions>
           <el-empty v-else description="暂无维修记录" :image-size="60" />
         </template>

@@ -29,6 +29,13 @@ public class RepairController {
     }
 
     @PreAuthorize("isAuthenticated()")
+    @GetMapping("/{id}")
+    public ApiResponse<Repair> getById(@PathVariable Long id) {
+        Repair repair = repairService.findById(id);
+        return ApiResponse.success(repair);
+    }
+
+    @PreAuthorize("isAuthenticated()")
     @PostMapping
     public ApiResponse<Repair> report(@Valid @RequestBody Repair repair) {
         Repair savedRepair = repairService.report(repair);

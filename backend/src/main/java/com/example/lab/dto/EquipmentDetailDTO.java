@@ -99,6 +99,7 @@ public class EquipmentDetailDTO {
 
         private String repairCompany;
         private BigDecimal cost;
+        private String repairConclusion;
 
         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         private LocalDateTime finishDate;
@@ -118,6 +119,8 @@ public class EquipmentDetailDTO {
         public void setRepairCompany(String repairCompany) { this.repairCompany = repairCompany; }
         public BigDecimal getCost() { return cost; }
         public void setCost(BigDecimal cost) { this.cost = cost; }
+        public String getRepairConclusion() { return repairConclusion; }
+        public void setRepairConclusion(String repairConclusion) { this.repairConclusion = repairConclusion; }
         public LocalDateTime getFinishDate() { return finishDate; }
         public void setFinishDate(LocalDateTime finishDate) { this.finishDate = finishDate; }
         public String getStatus() { return status; }
