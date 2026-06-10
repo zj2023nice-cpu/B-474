@@ -30,8 +30,12 @@ public class ReminderService {
             ReminderModule module = provider.buildModule();
             modules.add(module);
             totalCount += module.getTotalCount();
-            if (module.getOverallPriority() == ReminderPriority.HIGH) {
-                highPriorityCount += module.getTotalCount();
+            if (module.getItems() != null) {
+                for (var item : module.getItems()) {
+                    if (item.getPriority() == ReminderPriority.HIGH) {
+                        highPriorityCount++;
+                    }
+                }
             }
         }
 

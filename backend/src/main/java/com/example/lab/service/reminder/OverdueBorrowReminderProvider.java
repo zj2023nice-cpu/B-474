@@ -105,9 +105,6 @@ public class OverdueBorrowReminderProvider implements ReminderProvider {
         });
 
         module.setItems(items);
-        if (!items.isEmpty() && overallPriority == ReminderPriority.LOW) {
-            overallPriority = ReminderPriority.MEDIUM;
-        }
         module.setOverallPriority(overallPriority);
 
         return module;

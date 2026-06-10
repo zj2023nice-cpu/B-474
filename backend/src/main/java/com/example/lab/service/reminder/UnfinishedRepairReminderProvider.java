@@ -107,9 +107,6 @@ public class UnfinishedRepairReminderProvider implements ReminderProvider {
             return a.getTime().compareTo(b.getTime());
         });
 
-        if (!items.isEmpty() && overallPriority == ReminderPriority.LOW) {
-            overallPriority = ReminderPriority.MEDIUM;
-        }
         module.setItems(items);
         module.setOverallPriority(overallPriority);
 
