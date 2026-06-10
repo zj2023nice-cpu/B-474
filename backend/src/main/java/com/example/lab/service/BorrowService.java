@@ -73,9 +73,9 @@ public class BorrowService {
         }
         boolean hasPermission = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
-                .anyMatch(role -> role.equals(RoleConstant.ROLE_ADMIN) || role.equals(RoleConstant.ROLE_TEACHER));
+                .anyMatch(role -> role.equals(RoleConstant.ROLE_ADMIN));
         if (!hasPermission) {
-            throw new BusinessException("权限不足：仅教师和管理员可审批借用申请");
+            throw new BusinessException("权限不足：仅管理员可审批借用申请");
         }
     }
 

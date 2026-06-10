@@ -48,14 +48,14 @@ public class BorrowController {
         return ApiResponse.success("申请成功", savedBorrow);
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}/approve")
     public ApiResponse<Borrow> approve(@PathVariable Long id) {
         Borrow approvedBorrow = borrowService.approve(id);
         return ApiResponse.success("审批通过", approvedBorrow);
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER')")
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}/reject")
     public ApiResponse<Borrow> reject(@PathVariable Long id, @Valid @RequestBody ApprovalRequest request) {
         Borrow rejectedBorrow = borrowService.reject(id, request.getRejectReason());
