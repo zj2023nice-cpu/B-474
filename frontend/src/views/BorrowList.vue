@@ -268,19 +268,35 @@ const fetchBorrows = async () => {
 }
 
 const fetchBorrowsWithPageFallback = async () => {
-  const requestedPage = pagination.currentPage
-  await fetchBorrows()
+  let maxAttempts = 5
+  let attempts = 0
 
-  const currentContent = pageData.value.content
-  const totalPages = pageData.value.totalPages
-
-  const contentEmpty = !currentContent || currentContent.length === 0
-  const hasValidPages = totalPages > 0
-  const needsFallback = contentEmpty && hasValidPages && requestedPage !== totalPages
-
-  if (needsFallback) {
-    pagination.currentPage = totalPages
+  while (attempts < maxAttempts) {
+    attempts++
     await fetchBorrows()
+
+    const currentContent = pageData.value.content
+    const totalPages = pageData.value.totalPages
+    const contentEmpty = !currentContent || currentContent.length === 0
+    const currentPage = pagination.currentPage
+
+    if (!contentEmpty) {
+      break
+    }
+
+    if (totalPages <= 0) {
+      if (currentPage !== 1) {
+        pagination.currentPage = 1
+      } else {
+        break
+      }
+    } else if (currentPage > totalPages) {
+      pagination.currentPage = totalPages
+    } else if (currentPage > 1) {
+      pagination.currentPage = currentPage - 1
+    } else {
+      break
+    }
   }
 }
 

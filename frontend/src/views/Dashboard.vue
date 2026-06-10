@@ -93,6 +93,7 @@ const statusMap = {
   APPROVED: '已批准',
   RETURNED: '已归还',
   REJECTED: '已拒绝',
+  CANCELLED: '已取消',
   REPORTED: '已报修',
   IN_PROGRESS: '维修中',
   FINISHED: '已完成'
@@ -103,6 +104,7 @@ const statusTagTypeMap = {
   APPROVED: 'success',
   RETURNED: 'info',
   REJECTED: 'danger',
+  CANCELLED: 'info',
   REPORTED: 'danger',
   IN_PROGRESS: 'warning',
   FINISHED: 'success'
