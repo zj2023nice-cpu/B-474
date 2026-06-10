@@ -33,6 +33,7 @@ public class BorrowService {
     private static final String STATUS_APPROVED = "APPROVED";
     private static final String STATUS_REJECTED = "REJECTED";
     private static final String STATUS_RETURNED = "RETURNED";
+    private static final String STATUS_CANCELLED = "CANCELLED";
 
     @Autowired
     private BorrowRepository borrowRepository;
@@ -85,6 +86,30 @@ public class BorrowService {
             throw new BusinessException("请先登录");
         }
         return (Long) authentication.getPrincipal();
+    }
+
+    private boolean isCurrentUserAdmin() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return false;
+        }
+        return authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role -> role.equals(RoleConstant.ROLE_ADMIN));
+    }
+
+    private void checkCanCancel(Borrow borrow) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new BusinessException("请先登录");
+        }
+        Long currentUserId = getCurrentUserId();
+        boolean isAdmin = isCurrentUserAdmin();
+        boolean isApplicant = borrow.getApplicant() != null && borrow.getApplicant().getId().equals(currentUserId);
+
+        if (!isAdmin && !isApplicant) {
+            throw new BusinessException("权限不足：仅申请人本人或管理员可取消申请");
+        }
     }
 
     @Transactional
@@ -299,7 +324,61 @@ public class BorrowService {
         return PageRequest.of(query.getPage() - 1, query.getSize(), sort);
     }
 
+    @Transactional
+    public Borrow cancel(Long borrowId) {
+        Long currentUserId = getCurrentUserId();
+
+        Borrow borrow = borrowRepository.findByIdWithLock(borrowId)
+                .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
+
+        checkCanCancel(borrow);
+
+        String status = borrow.getStatus();
+        if (STATUS_APPROVED.equals(status)) {
+            throw new BusinessException("该申请已被批准，无法取消，请走归还流程");
+        }
+        if (STATUS_RETURNED.equals(status)) {
+            throw new BusinessException("该借用已归还，无法取消");
+        }
+        if (STATUS_REJECTED.equals(status)) {
+            throw new BusinessException("该申请已被拒绝，无需取消");
+        }
+        if (STATUS_CANCELLED.equals(status)) {
+            throw new BusinessException("该申请已取消，请勿重复操作");
+        }
+        if (!STATUS_PENDING.equals(status)) {
+            throw new BusinessException("当前状态不允许取消，仅待审批状态的申请可以取消");
+        }
+
+        User operator = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new BusinessException(404, "操作人不存在"));
+
+        borrow.setStatus(STATUS_CANCELLED);
+        borrow.setCancelTime(LocalDateTime.now());
+        borrow.setCancelOperator(operator.getName());
+
+        Equipment equipment = borrow.getEquipment();
+        if (equipment != null && "BORROWED".equals(equipment.getStatus())) {
+            equipment.setStatus("NORMAL");
+            equipmentRepository.save(equipment);
+        }
+
+        return borrowRepository.save(borrow);
+    }
+
+    @Transactional
     public void delete(Long id) {
+        checkCanApprove();
+
+        Borrow borrow = borrowRepository.findByIdWithLock(id)
+                .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
+
+        Equipment equipment = borrow.getEquipment();
+        if (equipment != null && "BORROWED".equals(equipment.getStatus())) {
+            equipment.setStatus("NORMAL");
+            equipmentRepository.save(equipment);
+        }
+
         borrowRepository.deleteById(id);
     }
 }

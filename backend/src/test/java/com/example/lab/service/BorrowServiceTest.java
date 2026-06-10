@@ -682,4 +682,297 @@ class BorrowServiceTest {
 
         verify(borrowRepository, never()).save(any(Borrow.class));
     }
+
+    @Test
+    void testCancel_ByApplicant_ShouldSetStatusCancelled() {
+        Long borrowId = 1L;
+        Long applicantId = 3L;
+        User applicant = new User();
+        applicant.setId(applicantId);
+        applicant.setName("申请人");
+        applicant.setRole("TEACHER");
+
+        Borrow pendingBorrow = new Borrow();
+        pendingBorrow.setId(borrowId);
+        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setEquipment(testEquipment);
+        pendingBorrow.setApplicant(applicant);
+
+        Collection<GrantedAuthority> authorities = Arrays.asList(
+            new SimpleGrantedAuthority(RoleConstant.ROLE_TEACHER)
+        );
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        when(authentication.getPrincipal()).thenReturn(applicantId);
+        when(authentication.getAuthorities()).thenAnswer(inv -> authorities);
+        SecurityContextHolder.setContext(securityContext);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
+        when(userRepository.findById(applicantId)).thenReturn(Optional.of(applicant));
+        when(borrowRepository.save(pendingBorrow)).thenReturn(pendingBorrow);
+
+        Borrow result = borrowService.cancel(borrowId);
+
+        assertNotNull(result);
+        assertEquals("CANCELLED", result.getStatus());
+        assertNotNull(result.getCancelTime());
+        assertEquals("申请人", result.getCancelOperator());
+
+        verify(borrowRepository).findByIdWithLock(borrowId);
+        verify(userRepository).findById(applicantId);
+        verify(borrowRepository).save(pendingBorrow);
+        verify(equipmentRepository, never()).save(any(Equipment.class));
+    }
+
+    @Test
+    void testCancel_ByAdmin_ShouldSetStatusCancelled() {
+        Long borrowId = 1L;
+        Long applicantId = 3L;
+        User applicant = new User();
+        applicant.setId(applicantId);
+        applicant.setName("申请人");
+
+        Borrow pendingBorrow = new Borrow();
+        pendingBorrow.setId(borrowId);
+        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setEquipment(testEquipment);
+        pendingBorrow.setApplicant(applicant);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(testApprover));
+        when(borrowRepository.save(pendingBorrow)).thenReturn(pendingBorrow);
+
+        Borrow result = borrowService.cancel(borrowId);
+
+        assertNotNull(result);
+        assertEquals("CANCELLED", result.getStatus());
+        assertNotNull(result.getCancelTime());
+        assertEquals("管理员", result.getCancelOperator());
+
+        verify(borrowRepository).findByIdWithLock(borrowId);
+        verify(userRepository).findById(2L);
+        verify(borrowRepository).save(pendingBorrow);
+    }
+
+    @Test
+    void testCancel_ByNonApplicantNonAdmin_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+        Long otherUserId = 4L;
+        User applicant = new User();
+        applicant.setId(3L);
+        applicant.setName("申请人");
+
+        Borrow pendingBorrow = new Borrow();
+        pendingBorrow.setId(borrowId);
+        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setEquipment(testEquipment);
+        pendingBorrow.setApplicant(applicant);
+
+        Collection<GrantedAuthority> authorities = Arrays.asList(
+            new SimpleGrantedAuthority(RoleConstant.ROLE_TEACHER)
+        );
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        when(authentication.getPrincipal()).thenReturn(otherUserId);
+        when(authentication.getAuthorities()).thenAnswer(inv -> authorities);
+        SecurityContextHolder.setContext(securityContext);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.cancel(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("仅申请人本人或管理员可取消"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testCancel_AlreadyApproved_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+        User applicant = new User();
+        applicant.setId(3L);
+        applicant.setName("申请人");
+
+        Borrow approvedBorrow = new Borrow();
+        approvedBorrow.setId(borrowId);
+        approvedBorrow.setStatus("APPROVED");
+        approvedBorrow.setEquipment(testEquipment);
+        approvedBorrow.setApplicant(applicant);
+
+        Collection<GrantedAuthority> authorities = Arrays.asList(
+            new SimpleGrantedAuthority(RoleConstant.ROLE_TEACHER)
+        );
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        when(authentication.getPrincipal()).thenReturn(3L);
+        when(authentication.getAuthorities()).thenAnswer(inv -> authorities);
+        SecurityContextHolder.setContext(securityContext);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.cancel(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("已被批准"));
+        assertTrue(exception.getMessage().contains("归还流程"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testCancel_AlreadyReturned_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+        User applicant = new User();
+        applicant.setId(3L);
+        applicant.setName("申请人");
+
+        Borrow returnedBorrow = new Borrow();
+        returnedBorrow.setId(borrowId);
+        returnedBorrow.setStatus("RETURNED");
+        returnedBorrow.setEquipment(testEquipment);
+        returnedBorrow.setApplicant(applicant);
+
+        Collection<GrantedAuthority> authorities = Arrays.asList(
+            new SimpleGrantedAuthority(RoleConstant.ROLE_TEACHER)
+        );
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        when(authentication.getPrincipal()).thenReturn(3L);
+        when(authentication.getAuthorities()).thenAnswer(inv -> authorities);
+        SecurityContextHolder.setContext(securityContext);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(returnedBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.cancel(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("已归还"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testCancel_AlreadyRejected_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+        User applicant = new User();
+        applicant.setId(3L);
+        applicant.setName("申请人");
+
+        Borrow rejectedBorrow = new Borrow();
+        rejectedBorrow.setId(borrowId);
+        rejectedBorrow.setStatus("REJECTED");
+        rejectedBorrow.setEquipment(testEquipment);
+        rejectedBorrow.setApplicant(applicant);
+
+        Collection<GrantedAuthority> authorities = Arrays.asList(
+            new SimpleGrantedAuthority(RoleConstant.ROLE_TEACHER)
+        );
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        when(authentication.getPrincipal()).thenReturn(3L);
+        when(authentication.getAuthorities()).thenAnswer(inv -> authorities);
+        SecurityContextHolder.setContext(securityContext);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(rejectedBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.cancel(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("已被拒绝"));
+        assertTrue(exception.getMessage().contains("无需取消"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testCancel_AlreadyCancelled_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+        User applicant = new User();
+        applicant.setId(3L);
+        applicant.setName("申请人");
+
+        Borrow cancelledBorrow = new Borrow();
+        cancelledBorrow.setId(borrowId);
+        cancelledBorrow.setStatus("CANCELLED");
+        cancelledBorrow.setEquipment(testEquipment);
+        cancelledBorrow.setApplicant(applicant);
+
+        Collection<GrantedAuthority> authorities = Arrays.asList(
+            new SimpleGrantedAuthority(RoleConstant.ROLE_TEACHER)
+        );
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        when(authentication.getPrincipal()).thenReturn(3L);
+        when(authentication.getAuthorities()).thenAnswer(inv -> authorities);
+        SecurityContextHolder.setContext(securityContext);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(cancelledBorrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.cancel(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("已取消"));
+        assertTrue(exception.getMessage().contains("请勿重复操作"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testCancel_BorrowNotFound_ShouldThrowBusinessException() {
+        Long borrowId = 999L;
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.empty());
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.cancel(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("借用记录不存在"));
+
+        verify(borrowRepository, never()).save(any(Borrow.class));
+    }
+
+    @Test
+    void testDelete_NonAdmin_ShouldThrowBusinessException() {
+        Long borrowId = 1L;
+
+        Collection<GrantedAuthority> authorities = Arrays.asList(
+            new SimpleGrantedAuthority(RoleConstant.ROLE_TEACHER)
+        );
+        when(securityContext.getAuthentication()).thenReturn(authentication);
+        when(authentication.getPrincipal()).thenReturn(3L);
+        when(authentication.getAuthorities()).thenAnswer(inv -> authorities);
+        SecurityContextHolder.setContext(securityContext);
+
+        Borrow borrow = new Borrow();
+        borrow.setId(borrowId);
+        borrow.setStatus("PENDING");
+        borrow.setEquipment(testEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(borrow));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.delete(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("仅管理员可审批"));
+
+        verify(borrowRepository, never()).deleteById(anyLong());
+    }
+
+    @Test
+    void testDelete_WithBorrowedEquipment_ShouldResetStatus() {
+        Long borrowId = 1L;
+
+        Equipment borrowedEquipment = new Equipment();
+        borrowedEquipment.setId(1L);
+        borrowedEquipment.setStatus("BORROWED");
+
+        Borrow approvedBorrow = new Borrow();
+        approvedBorrow.setId(borrowId);
+        approvedBorrow.setStatus("APPROVED");
+        approvedBorrow.setEquipment(borrowedEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
+        doNothing().when(borrowRepository).deleteById(borrowId);
+
+        borrowService.delete(borrowId);
+
+        assertEquals("NORMAL", borrowedEquipment.getStatus());
+        verify(equipmentRepository).save(borrowedEquipment);
+        verify(borrowRepository).deleteById(borrowId);
+    }
 }

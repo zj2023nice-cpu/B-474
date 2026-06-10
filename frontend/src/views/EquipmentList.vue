@@ -316,7 +316,9 @@ const getBorrowStatusType = (status) => {
   if (status === 'APPROVED') return 'success'
   if (status === 'PENDING') return 'warning'
   if (status === 'RETURNED') return 'info'
-  return 'danger'
+  if (status === 'REJECTED') return 'danger'
+  if (status === 'CANCELLED') return 'info'
+  return 'info'
 }
 
 const getBorrowStatusText = (status) => {
@@ -324,6 +326,7 @@ const getBorrowStatusText = (status) => {
   if (status === 'PENDING') return '待审批'
   if (status === 'RETURNED') return '已归还'
   if (status === 'REJECTED') return '已拒绝'
+  if (status === 'CANCELLED') return '已取消'
   return status
 }
 

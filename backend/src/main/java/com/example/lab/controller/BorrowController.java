@@ -69,6 +69,13 @@ public class BorrowController {
         return ApiResponse.success("归还成功", returnedBorrow);
     }
 
+    @PreAuthorize("isAuthenticated()")
+    @PutMapping("/{id}/cancel")
+    public ApiResponse<Borrow> cancel(@PathVariable Long id) {
+        Borrow cancelledBorrow = borrowService.cancel(id);
+        return ApiResponse.success("取消成功", cancelledBorrow);
+    }
+
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable Long id) {

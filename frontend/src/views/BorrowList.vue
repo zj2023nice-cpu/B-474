@@ -10,6 +10,7 @@
         <el-option label="已批准" value="APPROVED" />
         <el-option label="已归还" value="RETURNED" />
         <el-option label="已拒绝" value="REJECTED" />
+        <el-option label="已取消" value="CANCELLED" />
       </el-select>
       <el-button type="primary" style="margin-left: 10px" @click="handleSearch">搜索</el-button>
       <el-button style="margin-left: 10px" @click="resetSearch">重置</el-button>
@@ -477,8 +478,8 @@ const handleCancel = (row) => {
     fetchBorrows()
     return
   }
-  
-  ElMessageBox.confirm('确认取消申请？', '提示', {
+
+  ElMessageBox.confirm('确认取消申请？取消后无法恢复。', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
@@ -486,8 +487,19 @@ const handleCancel = (row) => {
     currentActionId.value = row.id
     cancelling.value = true
     try {
-      await request.delete(`/borrows/${row.id}`)
+      const result = await request.put(`/borrows/${row.id}/cancel`)
+
+      const idx = pageData.value.content.findIndex(item => item.id === row.id)
+      if (idx !== -1 && result) {
+        pageData.value.content.splice(idx, 1, result)
+      }
+
+      const currentPage = pagination.currentPage
       await fetchBorrows()
+      if (pagination.currentPage !== currentPage && pageData.value.content.length === 0 && pagination.currentPage > 1) {
+        pagination.currentPage = Math.max(1, pagination.currentPage - 1)
+        await fetchBorrows()
+      }
       ElMessage.success('已取消')
     } finally {
       cancelling.value = false
@@ -504,6 +516,7 @@ const getStatusType = (status) => {
   if (status === 'PENDING') return 'warning'
   if (status === 'RETURNED') return 'info'
   if (status === 'REJECTED') return 'danger'
+  if (status === 'CANCELLED') return 'info'
   return 'info'
 }
 
@@ -512,6 +525,7 @@ const getStatusText = (status) => {
   if (status === 'PENDING') return '待审批'
   if (status === 'RETURNED') return '已归还'
   if (status === 'REJECTED') return '已拒绝'
+  if (status === 'CANCELLED') return '已取消'
   return status || '-'
 }
 

@@ -41,8 +41,13 @@ public class Borrow {
     @Size(max = 500, message = "用途说明长度不能超过 500 个字符")
     private String purpose;
     
-    @Pattern(regexp = "^(PENDING|APPROVED|RETURNED|REJECTED)$", message = "状态必须是 PENDING、APPROVED、RETURNED 或 REJECTED")
-    private String status; // PENDING, APPROVED, RETURNED, REJECTED
+    @Pattern(regexp = "^(PENDING|APPROVED|RETURNED|REJECTED|CANCELLED)$", message = "状态必须是 PENDING、APPROVED、RETURNED、REJECTED 或 CANCELLED")
+    private String status; // PENDING, APPROVED, RETURNED, REJECTED, CANCELLED
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime cancelTime;
+
+    private String cancelOperator; // 取消操作人姓名
 
     @ManyToOne
     @JoinColumn(name = "approver_id")
