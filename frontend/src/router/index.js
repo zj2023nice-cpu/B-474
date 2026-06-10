@@ -50,6 +50,11 @@ const router = createRouter({
           component: () => import('../views/ExpiringEquipments.vue')
         },
         {
+          path: 'reminders',
+          name: 'reminders',
+          component: () => import('../views/SystemReminders.vue')
+        },
+        {
           path: 'profile',
           name: 'profile',
           component: () => import('../views/ProfileView.vue')

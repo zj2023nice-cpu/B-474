@@ -37,6 +37,10 @@
           <el-icon><AlarmClock /></el-icon>
           <span>到期提醒</span>
         </el-menu-item>
+        <el-menu-item index="/reminders">
+          <el-icon><Bell /></el-icon>
+          <span>系统提醒</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
@@ -67,7 +71,7 @@
 <script setup>
 import { useUserStore } from '../stores/user'
 import { useRouter } from 'vue-router'
-import { Odometer, OfficeBuilding, Monitor, List, Tools, ArrowDown, AlarmClock } from '@element-plus/icons-vue'
+import { Odometer, OfficeBuilding, Monitor, List, Tools, ArrowDown, AlarmClock, Bell } from '@element-plus/icons-vue'
 
 const userStore = useUserStore()
 const router = useRouter()

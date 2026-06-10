@@ -36,4 +36,7 @@ public interface BorrowRepository extends JpaRepository<Borrow, Long>, JpaSpecif
                                @Param("start") LocalDateTime start, 
                                @Param("end") LocalDateTime end,
                                @Param("excludeId") Long excludeId);
+
+    @Query("SELECT b FROM Borrow b WHERE b.status = :status AND b.endTime < :now ORDER BY b.endTime ASC")
+    List<Borrow> findOverdue(@Param("status") String status, @Param("now") LocalDateTime now);
 }
