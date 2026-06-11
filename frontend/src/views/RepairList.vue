@@ -1,84 +1,131 @@
 <template>
   <div>
     <div class="header-actions">
-      <el-button v-if="canReport" type="primary" @click="showApplyDialog">申请报修</el-button>
+      <el-button v-if="canReport" type="primary" @click="showReportDialog">申请报修</el-button>
       <el-alert v-if="isStudent" type="info" :closable="false" show-icon class="student-tip">
-        <template #title>学生账号仅可查看报修记录，如需申请请联系教师</template>
+        <template #title>学生账号仅可查看报修记录，如需报修请联系教师</template>
       </el-alert>
-      <el-select v-model="searchForm.status" placeholder="状态筛选" style="width: 130px; margin-left: 10px" clearable @change="handleSearch">
+      <el-select v-model="searchForm.status" placeholder="状态筛选" style="width: 120px; margin-left: 10px" clearable @clear="handleSearch" @change="handleSearch">
         <el-option label="已上报" :value="RepairStatus.REPORTED" />
-        <el-option label="维修中" :value="RepairStatus.IN_PROGRESS" />
+        <el-option label="维修中" :value="RepairStatus.IN_PROGRESS" />      
         <el-option label="已完成" :value="RepairStatus.FINISHED" />
       </el-select>
       <el-button type="primary" style="margin-left: 10px" @click="handleSearch">搜索</el-button>
       <el-button style="margin-left: 10px" @click="resetSearch">重置</el-button>
     </div>
 
-    <el-table :data="pageData.content" style="width: 100%" v-loading="loading">
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="equipment.name" label="设备" min-width="100">
-        <template #default="scope">{{ scope.row.equipment?.name || '-' }}</template>
-      </el-table-column>
-      <el-table-column prop="reporter.name" label="报修人" width="90">
-        <template #default="scope">{{ scope.row.reporter?.name || '-' }}</template>
-      </el-table-column>
-      <el-table-column prop="faultDescription" label="故障描述" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="reportTime" label="报修时间" width="160" />
-      <el-table-column prop="status" label="状态" width="90">
+    <el-table :data="pageData.content" style="width: 100%" v-loading="loading">     
+      <el-table-column prop="id" label="ID" width="60" />       
+      <el-table-column prop="equipment.name" label="设备名称" min-width="100">
         <template #default="scope">
-          <el-tag :type="getRepairStatusType(scope.row.status)">
-            {{ getRepairStatusText(scope.row.status) }}
-          </el-tag>
+          {{ scope.row.equipment?.name || '-' }}
         </template>
       </el-table-column>
-      <el-table-column prop="repairResult" label="维修结果" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="repairTime" label="维修时间" width="160">
-        <template #default="scope">{{ scope.row.repairTime || '-' }}</template>
-      </el-table-column>
-      <el-table-column v-if="canReport" label="操作" width="200" fixed="right">
+      <el-table-column prop="equipment.code" label="设备编号" width="110">
         <template #default="scope">
-          <div v-if="(scope.row.status === RepairStatus.REPORTED || scope.row.status === RepairStatus.IN_PROGRESS) && isAdmin">
+          {{ scope.row.equipment?.code || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="description" label="故障描述" min-width="150" show-overflow-tooltip>
+        <template #default="scope">
+          {{ scope.row.description || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="reporter.name" label="报修人" width="80">
+        <template #default="scope">
+          {{ scope.row.reporter?.name || scope.row.reporter?.username || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="reportDate" label="报修日期" width="160" />
+      <el-table-column prop="status" label="状态" width="90">  
+        <template #default="scope">
+          <el-tag :type="getRepairStatusType(scope.row.status)">{{ getRepairStatusText(scope.row.status) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="repairConclusion" label="维修结论" min-width="150" show-overflow-tooltip>
+        <template #default="scope">
+          {{ scope.row.repairConclusion || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="repairCompany" label="维修单位" width="110" show-overflow-tooltip>
+        <template #default="scope">
+          {{ scope.row.repairCompany || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="cost" label="维修费用" width="100">
+        <template #default="scope">
+          <span v-if="scope.row.cost !== null && scope.row.cost !== undefined">
+            ¥{{ Number(scope.row.cost).toFixed(2) }}
+          </span>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="finishDate" label="完成日期" width="160">
+        <template #default="scope">
+          {{ scope.row.finishDate || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column v-if="canReport" label="操作" width="260" fixed="right">
+        <template #default="scope">
+          <el-button
+            type="primary"
+            size="small"
+            text
+            @click="showDetailDialog(scope.row)"
+          >查看</el-button>
+          <template v-if="(scope.row.status === RepairStatus.REPORTED || scope.row.status === RepairStatus.IN_PROGRESS) && isAdmin">
             <el-tooltip 
               v-if="!getRepairOperationAllowed(scope.row, BusinessOperation.FINISH_REPAIR)"
               :content="getRepairOperationDisabledReason(scope.row, BusinessOperation.FINISH_REPAIR)"
               placement="top"
             >
-              <el-button 
-                type="success" 
-                size="small" 
+              <el-button
+                type="success"
+                size="small"
+                text
                 disabled
               >完成维修</el-button>
             </el-tooltip>
-            <el-button 
+            <el-button
               v-else
-              type="success" 
-              size="small" 
+              type="success"
+              size="small"
+              text
               :loading="finishing && scope.row.id === currentActionId"
               :disabled="finishing"
-              @click="handleFinish(scope.row)"
+              @click="showFinishDialog(scope.row)"
             >完成维修</el-button>
-          </div>
-          <div v-if="scope.row.status === RepairStatus.REPORTED && (isAdmin || scope.row.reporter?.id === userStore.user.id)">
+          </template>
+          <template v-if="scope.row.status === RepairStatus.REPORTED && (isAdmin || scope.row.reporter?.id === userStore.user?.id)">
             <el-tooltip 
               v-if="!getRepairOperationAllowed(scope.row, BusinessOperation.CANCEL_REPAIR)"
               :content="getRepairOperationDisabledReason(scope.row, BusinessOperation.CANCEL_REPAIR)"
               placement="top"
             >
-              <el-button 
-                type="warning" 
-                size="small" 
+              <el-button
+                type="danger"
+                size="small"
+                text
                 disabled
               >取消</el-button>
             </el-tooltip>
-            <el-button 
+            <el-button
               v-else
-              type="warning" 
-              size="small" 
+              type="danger"
+              size="small"
+              text
               :loading="cancelling && scope.row.id === currentActionId"
               :disabled="cancelling"
               @click="handleCancel(scope.row)"
             >取消</el-button>
-          </div>
+          </template>
+          <el-button
+            v-if="isAdmin && scope.row.status === RepairStatus.FINISHED"   
+            type="danger"
+            size="small"
+            text
+            @click="handleDelete(scope.row)"
+          >删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -89,16 +136,16 @@
         v-model:page-size="pagination.pageSize"
         :page-sizes="[10, 20, 50, 100]"
         :total="pagination.total"
-        layout="total, sizes, prev, pager, next, jumper"
+        layout="total, sizes, prev, pager, next, jumper"        
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
       />
     </div>
 
-    <el-dialog v-model="dialogVisible" title="申请报修" width="600px">
-      <el-form :model="form" label-width="100px">
-        <el-form-item label="设备">
-          <el-select v-model="form.equipmentId" placeholder="选择设备" filterable>
+    <el-dialog v-model="reportDialogVisible" title="申请报修" width="500px">
+      <el-form ref="reportFormRef" :model="reportForm" :rules="reportFormRules" label-width="100px">
+        <el-form-item label="设备" prop="equipmentId">
+          <el-select v-model="reportForm.equipmentId" placeholder="选择设备" filterable style="width: 100%" @change="onEquipmentChange">
             <el-option
               v-for="eq in equipments"
               :key="eq.id"
@@ -126,38 +173,100 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="故障描述">
-          <el-input v-model="form.faultDescription" type="textarea" placeholder="请详细描述故障情况" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="form.remark" type="textarea" placeholder="其他需要说明的情况" />
+        <el-form-item label="故障描述" prop="description">  
+          <el-input
+            v-model="reportForm.description"
+            type="textarea"
+            :rows="4"
+            maxlength="1000"
+            show-word-limit
+            placeholder="请详细描述故障情况"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :disabled="!form.equipmentId || !form.faultDescription">提交</el-button>
+        <el-button @click="reportDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleReportSubmit">提交报修</el-button>
       </template>
     </el-dialog>
 
     <el-dialog v-model="finishDialogVisible" title="完成维修" width="500px">
-      <el-form :model="finishForm" label-width="100px">
-        <el-form-item label="维修结果">
-          <el-input v-model="finishForm.repairResult" type="textarea" placeholder="请描述维修结果" />
+      <el-form ref="finishFormRef" :model="finishForm" :rules="finishFormRules" label-width="100px">
+        <el-form-item label="设备">
+          <span>{{ currentRepair?.equipment?.name || '-' }}</span>
         </el-form-item>
-        <el-form-item label="维修备注">
-          <el-input v-model="finishForm.remark" type="textarea" placeholder="维修备注信息" />
+        <el-form-item label="故障描述">
+          <span>{{ currentRepair?.description || '-' }}</span>  
+        </el-form-item>
+        <el-form-item label="维修结论" prop="repairConclusion">
+          <el-input
+            v-model="finishForm.repairConclusion"
+            type="textarea"
+            :rows="4"
+            placeholder="请填写维修结论（必填）"       
+            maxlength="1000"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="维修单位" prop="repairCompany">
+          <el-input v-model="finishForm.repairCompany" placeholder="选填，维修单位名称" maxlength="100" />
+        </el-form-item>
+        <el-form-item label="维修费用" prop="cost">
+          <el-input-number v-model="finishForm.cost" :min="0" :precision="2" :step="10" style="width: 200px" />
+          <span style="margin-left: 10px; color: #909399; font-size: 12px">元，选填</span>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="finishDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleFinishSubmit" :disabled="!finishForm.repairResult">确认完成</el-button>
+        <el-button type="success" @click="handleFinishSubmit" :loading="finishing" :disabled="finishing">确认完成</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="detailDialogVisible" title="维修详情" width="600px">
+      <el-descriptions :column="2" border v-if="currentRepair"> 
+        <el-descriptions-item label="维修单号">{{ currentRepair.id }}</el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag :type="getRepairStatusType(currentRepair.status)">{{ getRepairStatusText(currentRepair.status) }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="设备名称" :span="2">     
+          {{ currentRepair.equipment?.name || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="设备编号" :span="2">    
+          {{ currentRepair.equipment?.code || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="报修人">{{ currentRepair.reporter?.name || currentRepair.reporter?.username || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="报修日期">{{ currentRepair.reportDate || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="故障描述" :span="2">   
+          {{ currentRepair.description || '-' }}
+        </el-descriptions-item>
+        <template v-if="currentRepair.status === RepairStatus.FINISHED">   
+          <el-descriptions-item label="维修结论" :span="2">  
+            {{ currentRepair.repairConclusion || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="维修单位">
+            {{ currentRepair.repairCompany || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="维修费用">
+            <span v-if="currentRepair.cost !== null && currentRepair.cost !== undefined">
+              ¥{{ Number(currentRepair.cost).toFixed(2) }}     
+            </span>
+            <span v-else>-</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="完成日期" :span="2"> 
+            {{ currentRepair.finishDate || '-' }}
+          </el-descriptions-item>
+        </template>
+      </el-descriptions>
+      <template #footer>
+        <el-button v-if="canFinishByRow(currentRepair)" type="success" @click="switchToFinish">去完成维修</el-button>
+        <el-button type="primary" @click="detailDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'        
 import request from '../api/request'
 import { useUserStore } from '../stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -172,19 +281,52 @@ import {
 import { checkRepairOperation } from '../api/stateConstraint'
 
 const userStore = useUserStore()
-const isAdmin = computed(() => userStore.role === 'ADMIN')
-const isTeacher = computed(() => userStore.role === 'TEACHER')
+const isAdmin = computed(() => userStore.role === 'ADMIN')      
+const isTeacher = computed(() => userStore.role === 'TEACHER')  
 const canReport = computed(() => isAdmin.value || isTeacher.value)
-const isStudent = computed(() => userStore.role === 'STUDENT')
+const isStudent = computed(() => userStore.role === 'STUDENT')  
 
-const equipments = ref([])
-const dialogVisible = ref(false)
-const form = ref({})
 const loading = ref(false)
+const equipments = ref([])
+const reportDialogVisible = ref(false)
+const reportFormRef = ref(null)
+const reportForm = ref({
+  equipmentId: null,
+  description: ''
+})
+
+const reportFormRules = {
+  equipmentId: [
+    { required: true, message: '请选择设备', trigger: 'change' }
+  ],
+  description: [
+    { required: true, message: '请填写故障描述', trigger: 'blur' },
+    { max: 1000, message: '故障描述长度不能超过 1000 个字符', trigger: 'blur' }
+  ]
+}
 
 const finishDialogVisible = ref(false)
-const finishForm = ref({})
-const currentFinishId = ref(null)
+const finishFormRef = ref(null)
+const currentRepair = ref(null)
+const finishForm = ref({
+  id: null,
+  repairConclusion: '',
+  repairCompany: '',
+  cost: null
+})
+
+const finishFormRules = {
+  repairConclusion: [
+    { required: true, message: '请填写维修结论', trigger: 'blur' },
+    { max: 1000, message: '维修结论长度不能超过 1000 个字符', trigger: 'blur' }
+  ],
+  repairCompany: [
+    { max: 100, message: '维修单位名称长度不能超过 100 个字符', trigger: 'blur' }
+  ]
+}
+
+const detailDialogVisible = ref(false)
+
 const finishing = ref(false)
 const cancelling = ref(false)
 const currentActionId = ref(null)
@@ -271,15 +413,11 @@ const fetchRepairs = async () => {
       size: pagination.pageSize
     }
 
-    if (isTeacher.value) {
-      params.userId = userStore.user.id
-    }
-
     if (searchForm.status) {
       params.status = searchForm.status
     }
 
-    const response = await request.get('/repairs', { params })
+    const response = await request.get('/repairs', { params })    
     pageData.value = response
     pagination.total = response.totalElements
     
@@ -349,24 +487,28 @@ const handleCurrentChange = (page) => {
   fetchRepairs()
 }
 
-const showApplyDialog = async () => {
+const onEquipmentChange = () => {
+}
+
+const showReportDialog = async () => {
   const params = {
     page: 1,
     size: 1000
   }
-  const response = await request.get('/equipments', { params })
+  const response = await request.get('/equipments', { params }) 
   equipments.value = response.content
-  form.value = {}
-  dialogVisible.value = true
+  reportForm.value = {
+    equipmentId: null,
+    description: ''
+  }
+  reportDialogVisible.value = true
 }
 
-const handleSubmit = async () => {
-  if (!form.value.equipmentId || !form.value.faultDescription) {
-    ElMessage.error('请填写完整信息')
-    return
-  }
+const handleReportSubmit = async () => {
+  if (!reportFormRef.value) return
+  await reportFormRef.value.validate()
 
-  const selectedEquipment = equipments.value.find(eq => eq.id === form.value.equipmentId)
+  const selectedEquipment = equipments.value.find(eq => eq.id === reportForm.value.equipmentId)
   if (!canRepairEquipment(selectedEquipment)) {
     ElMessage.error(getEquipmentDisabledReason(selectedEquipment, BusinessOperation.REPORT_REPAIR))
     return
@@ -378,25 +520,29 @@ const handleSubmit = async () => {
   }
 
   const payload = {
-    equipment: { id: form.value.equipmentId },
-    reporter: { id: userStore.user.id },
-    faultDescription: form.value.faultDescription,
-    remark: form.value.remark,
-    reportTime: new Date().toISOString().replace('T', ' ').split('.')[0]
+    equipment: { id: reportForm.value.equipmentId },
+    description: reportForm.value.description,
+    reporter: { id: userStore.user.id }
   }
-
+  
   try {
     await request.post('/repairs', payload)
-    dialogVisible.value = false
+    reportDialogVisible.value = false
     repairOperationCache.value.clear()
     fetchRepairs()
-    ElMessage.success('报修已提交')
+    ElMessage.success('已报修')
   } catch (e) {
     console.error(e)
   }
 }
 
-const handleFinish = async (row) => {
+const canFinishByRow = (row) => {
+  if (!row) return false
+  if (!isAdmin.value) return false
+  return row.status === RepairStatus.REPORTED || row.status === RepairStatus.IN_PROGRESS
+}
+
+const showFinishDialog = async (row) => {
   if (finishing.value) return
   
   const checkResult = await checkRepairOperation(row.id, BusinessOperation.FINISH_REPAIR)
@@ -407,43 +553,46 @@ const handleFinish = async (row) => {
     return
   }
   
-  currentFinishId.value = row.id
+  currentRepair.value = row
   finishForm.value = {
-    repairResult: '',
-    remark: ''
+    id: row.id,
+    repairConclusion: '',
+    repairCompany: row.repairCompany || '',
+    cost: row.cost ?? null
   }
   finishDialogVisible.value = true
 }
 
 const handleFinishSubmit = async () => {
-  if (!finishForm.value.repairResult) {
-    ElMessage.error('请填写维修结果')
-    return
-  }
+  if (!finishFormRef.value) return
+  await finishFormRef.value.validate()
+  
+  if (finishing.value) return
 
-  const checkResult = await checkRepairOperation(currentFinishId.value, BusinessOperation.FINISH_REPAIR)
+  const checkResult = await checkRepairOperation(finishForm.value.id, BusinessOperation.FINISH_REPAIR)
   if (!checkResult.allowed) {
     ElMessage.warning(checkResult.errorMessage || '当前状态无法完成维修')
-    repairOperationCache.value.set(`${currentFinishId.value}_${BusinessOperation.FINISH_REPAIR}`, checkResult)
+    repairOperationCache.value.set(`${finishForm.value.id}_${BusinessOperation.FINISH_REPAIR}`, checkResult)
     fetchRepairsWithPageFallback()
     finishDialogVisible.value = false
     return
   }
 
-  currentActionId.value = currentFinishId.value
+  currentActionId.value = finishForm.value.id
   finishing.value = true
   try {
     const payload = {
-      repairResult: finishForm.value.repairResult,
-      remark: finishForm.value.remark
+      repairConclusion: finishForm.value.repairConclusion,        
+      repairCompany: finishForm.value.repairCompany || null,      
+      cost: finishForm.value.cost ?? null
     }
-    const result = await request.put(`/repairs/${currentFinishId.value}/finish`, payload)
-
-    const idx = pageData.value.content.findIndex(item => item.id === currentFinishId.value)
+    const result = await request.put(`/repairs/${finishForm.value.id}/finish`, payload)
+    
+    const idx = pageData.value.content.findIndex(item => item.id === finishForm.value.id)
     if (idx !== -1 && result) {
       pageData.value.content.splice(idx, 1, result)
     }
-
+    
     finishDialogVisible.value = false
     repairOperationCache.value.clear()
     await fetchRepairsWithPageFallback()
@@ -452,6 +601,21 @@ const handleFinishSubmit = async () => {
     finishing.value = false
     currentActionId.value = null
   }
+}
+
+const showDetailDialog = async (row) => {
+  try {
+    const response = await request.get(`/repairs/${row.id}`)    
+    currentRepair.value = response
+    detailDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error('获取详情失败')
+  }
+}
+
+const switchToFinish = () => {
+  detailDialogVisible.value = false
+  showFinishDialog(currentRepair.value)
 }
 
 const handleCancel = (row) => {
@@ -465,7 +629,7 @@ const handleCancel = (row) => {
       return
     }
 
-    ElMessageBox.confirm('确认取消报修？取消后无法恢复。', '提示', {
+    ElMessageBox.confirm('确认取消该报修？', '提示', {     
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
@@ -473,13 +637,7 @@ const handleCancel = (row) => {
       currentActionId.value = row.id
       cancelling.value = true
       try {
-        const result = await request.delete(`/repairs/${row.id}`)
-
-        const idx = pageData.value.content.findIndex(item => item.id === row.id)
-        if (idx !== -1) {
-          pageData.value.content.splice(idx, 1)
-        }
-
+        await request.delete(`/repairs/${row.id}`)
         repairOperationCache.value.clear()
         await fetchRepairsWithPageFallback()
         ElMessage.success('已取消')
@@ -491,6 +649,19 @@ const handleCancel = (row) => {
       cancelling.value = false
       currentActionId.value = null
     })
+  })
+}
+
+const handleDelete = (row) => {
+  ElMessageBox.confirm('确认删除该维修记录？删除后不可恢复。', '警告', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(async () => {
+    await request.delete(`/repairs/${row.id}`)
+    repairOperationCache.value.clear()
+    fetchRepairs()
+    ElMessage.success('删除成功')
   })
 }
 
