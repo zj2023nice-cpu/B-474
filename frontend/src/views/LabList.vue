@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="header-actions">
-      <el-button v-if="isAdmin" type="primary" @click="showAddDialog">新增实验室</el-button>
+      <el-button v-if="canCreateLab" type="primary" @click="showAddDialog">新增实验室</el-button>
       <el-input v-model="searchForm.name" placeholder="搜索名称" style="width: 150px; margin-left: 10px" clearable @clear="handleSearch" />
       <el-input v-model="searchForm.building" placeholder="搜索楼宇" style="width: 150px; margin-left: 10px" clearable @clear="handleSearch" />
       <el-input v-model="searchForm.picName" placeholder="搜索负责人" style="width: 150px; margin-left: 10px" clearable @clear="handleSearch" />
@@ -20,8 +20,8 @@
       <el-table-column label="操作">
         <template #default="scope">
           <el-button type="primary" size="small" @click="openDetail(scope.row)">详情</el-button>
-          <el-button v-if="isAdmin" type="primary" size="small" @click="handleEdit(scope.row)">编辑</el-button>
-          <el-button v-if="isAdmin" type="danger" size="small" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button v-if="canEditLab" type="primary" size="small" @click="handleEdit(scope.row)">编辑</el-button>
+          <el-button v-if="canDeleteLab" type="danger" size="small" @click="handleDelete(scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -75,9 +75,12 @@ import request from '../api/request'
 import { useUserStore } from '../stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import LabDetailDrawer from '../components/LabDetailDrawer.vue'
+import { PERMISSIONS } from '../constants/roleConstants'
 
 const userStore = useUserStore()
-const isAdmin = computed(() => userStore.role === 'ADMIN')
+const canCreateLab = computed(() => userStore.hasPermission(PERMISSIONS.LAB_CREATE))
+const canEditLab = computed(() => userStore.hasPermission(PERMISSIONS.LAB_EDIT))
+const canDeleteLab = computed(() => userStore.hasPermission(PERMISSIONS.LAB_DELETE))
 
 const dialogVisible = ref(false)
 const form = ref({})

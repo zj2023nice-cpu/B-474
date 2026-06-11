@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { getProfile, updateProfile } from '../api/profile'
 import { sha256 } from '../utils/crypto'
+import { hasRole as _hasRole, hasPermission as _hasPermission } from '../utils/permission'
 
 export const useUserStore = defineStore('user', () => {
   const user = ref(JSON.parse(localStorage.getItem('user')) || null)
@@ -9,6 +10,14 @@ export const useUserStore = defineStore('user', () => {
 
   const isLoggedIn = computed(() => !!user.value && !!token.value)
   const role = computed(() => user.value?.role)
+
+  function hasRole(roles) {
+    return _hasRole(role.value, roles)
+  }
+
+  function hasPermission(permission) {
+    return _hasPermission(role.value, permission)
+  }
 
   function login(userData) {
     user.value = {
@@ -56,5 +65,16 @@ export const useUserStore = defineStore('user', () => {
     return data
   }
 
-  return { user, token, isLoggedIn, role, login, logout, fetchProfile, patchProfile }
+  return {
+    user,
+    token,
+    isLoggedIn,
+    role,
+    hasRole,
+    hasPermission,
+    login,
+    logout,
+    fetchProfile,
+    patchProfile
+  }
 })

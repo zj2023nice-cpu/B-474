@@ -1,0 +1,38 @@
+export const ROLES = {
+  ADMIN: 'ADMIN',
+  TEACHER: 'TEACHER',
+  STUDENT: 'STUDENT'
+}
+
+export const ROLE_LABELS = {
+  [ROLES.ADMIN]: '管理员',
+  [ROLES.TEACHER]: '教师',
+  [ROLES.STUDENT]: '学生'
+}
+
+export const PERMISSIONS = {
+  LAB_CREATE: 'lab:create',
+  LAB_EDIT: 'lab:edit',
+  LAB_DELETE: 'lab:delete',
+  EQUIPMENT_CREATE: 'equipment:create',
+  EQUIPMENT_DELETE: 'equipment:delete',
+  USER_MANAGE: 'user:manage',
+  EXPIRING_VIEW: 'expiring:view'
+}
+
+export const ROLE_PERMISSIONS = {
+  [ROLES.ADMIN]: [
+    PERMISSIONS.LAB_CREATE,
+    PERMISSIONS.LAB_EDIT,
+    PERMISSIONS.LAB_DELETE,
+    PERMISSIONS.EQUIPMENT_CREATE,
+    PERMISSIONS.EQUIPMENT_DELETE,
+    PERMISSIONS.USER_MANAGE,
+    PERMISSIONS.EXPIRING_VIEW
+  ],
+  [ROLES.TEACHER]: [
+    PERMISSIONS.LAB_EDIT,
+    PERMISSIONS.EXPIRING_VIEW
+  ],
+  [ROLES.STUDENT]: []
+}

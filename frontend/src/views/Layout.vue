@@ -9,37 +9,15 @@
         text-color="#bfcbd9"
         active-text-color="#409EFF"
       >
-        <el-menu-item index="/dashboard">
-          <el-icon><Odometer /></el-icon>
-          <span>首页</span>
-        </el-menu-item>
-        <el-menu-item index="/labs">
-          <el-icon><OfficeBuilding /></el-icon>
-          <span>实验室管理</span>
-        </el-menu-item>
-        <el-menu-item index="/equipments">
-          <el-icon><Monitor /></el-icon>
-          <span>设备管理</span>
-        </el-menu-item>
-        <el-menu-item index="/borrows">
-          <el-icon><List /></el-icon>
-          <span>借用管理</span>
-        </el-menu-item>
-        <el-menu-item index="/repairs">
-          <el-icon><Tools /></el-icon>
-          <span>维修管理</span>
-        </el-menu-item>
-        <el-menu-item index="/users" v-if="userStore.role === 'ADMIN'">
-          <el-icon><User /></el-icon>
-          <span>用户管理</span>
-        </el-menu-item>
-        <el-menu-item index="/expiring" v-if="userStore.role === 'ADMIN' || userStore.role === 'TEACHER'">
-          <el-icon><AlarmClock /></el-icon>
-          <span>到期提醒</span>
-        </el-menu-item>
-        <el-menu-item index="/reminders">
-          <el-icon><Bell /></el-icon>
-          <span>系统提醒</span>
+        <el-menu-item
+          v-for="item in menuRoutes"
+          :key="item.path"
+          :index="`/${item.path}`"
+        >
+          <el-icon>
+            <component :is="iconComponents[item.meta.icon]" />
+          </el-icon>
+          <span>{{ item.meta.title }}</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -69,12 +47,49 @@
 </template>
 
 <script setup>
-import { useUserStore } from '../stores/user'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Odometer, OfficeBuilding, Monitor, List, Tools, ArrowDown, AlarmClock, Bell } from '@element-plus/icons-vue'
+import { useUserStore } from '../stores/user'
+import {
+  Odometer,
+  OfficeBuilding,
+  Monitor,
+  List,
+  Tools,
+  User,
+  ArrowDown,
+  AlarmClock,
+  Bell
+} from '@element-plus/icons-vue'
 
-const userStore = useUserStore()
 const router = useRouter()
+const userStore = useUserStore()
+
+const iconComponents = {
+  Odometer,
+  OfficeBuilding,
+  Monitor,
+  List,
+  Tools,
+  User,
+  AlarmClock,
+  Bell
+}
+
+const layoutRoute = computed(() => {
+  return router.options.routes.find(r => r.path === '/')
+})
+
+const menuRoutes = computed(() => {
+  if (!layoutRoute.value?.children) return []
+  return layoutRoute.value.children.filter(route => {
+    if (route.meta?.hidden) return false
+    if (route.meta?.roles && route.meta.roles.length > 0) {
+      return userStore.hasRole(route.meta.roles)
+    }
+    return true
+  })
+})
 
 const handleCommand = (command) => {
   if (command === 'profile') {

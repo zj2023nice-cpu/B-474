@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="header-actions">
-      <el-button v-if="isAdmin" type="primary" @click="showAddDialog" :loading="addMutation.loading.value" :disabled="addMutation.locked.value">新增设备</el-button>
+      <el-button v-if="canCreateEquipment" type="primary" @click="showAddDialog" :loading="addMutation.loading.value" :disabled="addMutation.locked.value">新增设备</el-button>
       <el-input v-model="listPage.searchForm.name" placeholder="搜索名称" style="width: 150px; margin-left: 10px" clearable @clear="listPage.handleSearch" />
       <el-input v-model="listPage.searchForm.code" placeholder="搜索编号" style="width: 150px; margin-left: 10px" clearable @clear="listPage.handleSearch" />
       <el-select v-model="listPage.searchForm.status" placeholder="状态筛选" style="width: 120px; margin-left: 10px" clearable @clear="listPage.handleSearch">
@@ -38,7 +38,7 @@
         <template #default="scope">
           <el-button type="primary" size="small" @click.stop="openDetail(scope.row)">详情</el-button>
           <el-button
-            v-if="isAdmin"
+            v-if="canDeleteEquipment"
             type="danger"
             size="small"
             @click.stop="handleDelete(scope.row)"
@@ -196,9 +196,11 @@ import { useUserStore } from '../stores/user'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useRequest, useMutation } from '../composables/useRequest'
 import { useListPage } from '../composables/useListPage'
+import { PERMISSIONS } from '../constants/roleConstants'
 
 const userStore = useUserStore()
-const isAdmin = computed(() => userStore.role === 'ADMIN')
+const canCreateEquipment = computed(() => userStore.hasPermission(PERMISSIONS.EQUIPMENT_CREATE))
+const canDeleteEquipment = computed(() => userStore.hasPermission(PERMISSIONS.EQUIPMENT_DELETE))
 
 const labs = ref([])
 const dialogVisible = ref(false)
