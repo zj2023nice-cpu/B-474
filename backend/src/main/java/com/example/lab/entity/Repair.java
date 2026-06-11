@@ -1,10 +1,10 @@
 package com.example.lab.entity;
 
+import com.example.lab.enums.RepairStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -41,8 +41,9 @@ public class Repair {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime finishDate;
 
-    @Pattern(regexp = "^(REPORTED|IN_PROGRESS|FINISHED)$", message = "状态必须是 REPORTED、IN_PROGRESS 或 FINISHED")
-    private String status; // REPORTED, IN_PROGRESS, FINISHED
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private RepairStatus status;
     
     @ManyToOne
     @JoinColumn(name = "reporter_id")

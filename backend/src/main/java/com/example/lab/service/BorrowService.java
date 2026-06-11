@@ -6,6 +6,9 @@ import com.example.lab.dto.ConflictCheckResult;
 import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.User;
+import com.example.lab.enums.BorrowStatus;
+import com.example.lab.enums.BusinessOperation;
+import com.example.lab.enums.EquipmentStatus;
 import com.example.lab.exception.BusinessException;
 import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
@@ -29,12 +32,6 @@ import java.util.List;
 @Service
 public class BorrowService {
 
-    private static final String STATUS_PENDING = "PENDING";
-    private static final String STATUS_APPROVED = "APPROVED";
-    private static final String STATUS_REJECTED = "REJECTED";
-    private static final String STATUS_RETURNED = "RETURNED";
-    private static final String STATUS_CANCELLED = "CANCELLED";
-
     @Autowired
     private BorrowRepository borrowRepository;
 
@@ -43,6 +40,12 @@ public class BorrowService {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private StateConstraintService stateConstraintService;
+
+    @Autowired
+    private com.example.lab.repository.RepairRepository repairRepository;
 
     public ConflictCheckResult checkConflicts(Long equipmentId, LocalDateTime startTime, LocalDateTime endTime, Long excludeBorrowId) {
         if (equipmentId == null) {
@@ -182,9 +185,7 @@ public class BorrowService {
         Equipment equipment = equipmentRepository.findByIdWithLock(borrow.getEquipment().getId())
                 .orElseThrow(() -> new BusinessException(404, "设备不存在"));
 
-        if (!"NORMAL".equals(equipment.getStatus())) {
-            throw new BusinessException("设备当前状态不可借用：" + equipment.getStatus());
-        }
+        stateConstraintService.assertOperationAllowed(BusinessOperation.APPLY_BORROW, equipment);
 
         ConflictCheckResult finalCheckResult = checkConflicts(
                 borrow.getEquipment().getId(),
@@ -196,7 +197,7 @@ public class BorrowService {
             throw buildConflictException(finalCheckResult.getConflicts(), true);
         }
 
-        borrow.setStatus(STATUS_PENDING);
+        borrow.setStatus(BorrowStatus.PENDING);
         borrow.setApplyDate(LocalDateTime.now());
         borrow.setApplicant(applicant);
         borrow.setApprover(null);
@@ -217,7 +218,7 @@ public class BorrowService {
         for (ConflictCheckResult.ConflictRecord record : conflicts) {
             sb.append(String.format("- %s (%s): %s ~ %s\n",
                     record.getApplicantName(),
-                    "APPROVED".equals(record.getStatus()) ? "已批准" : "待审批",
+                    record.getStatus() == BorrowStatus.APPROVED ? "已批准" : "待审批",
                     record.getStartTime(),
                     record.getEndTime()));
         }
@@ -245,20 +246,34 @@ public class BorrowService {
         Borrow borrow = borrowRepository.findByIdWithLock(borrowId)
                 .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
 
-        validateCanApprove(borrow);
+        stateConstraintService.assertBorrowOperationAllowed(BusinessOperation.APPROVE_BORROW, borrow);
 
         User approver = userRepository.findById(approverId)
                 .orElseThrow(() -> new BusinessException(404, "审批人不存在"));
 
-        borrow.setStatus(STATUS_APPROVED);
+        Equipment equipment = equipmentRepository.findByIdWithLock(borrow.getEquipment().getId())
+                .orElseThrow(() -> new BusinessException(404, "设备不存在"));
+
+        stateConstraintService.assertWithLock(BusinessOperation.APPROVE_BORROW, equipment.getId());
+
+        ConflictCheckResult conflictCheckResult = checkConflicts(
+                equipment.getId(),
+                borrow.getStartTime(),
+                borrow.getEndTime(),
+                borrow.getId());
+
+        if (conflictCheckResult.isHasConflict()) {
+            throw buildConflictException(conflictCheckResult.getConflicts(), true);
+        }
+
+        borrow.setStatus(BorrowStatus.APPROVED);
         borrow.setApprover(approver);
         borrow.setApproveTime(LocalDateTime.now());
         borrow.setRejectReason(null);
         borrow.setRejectTime(null);
 
-        Equipment eq = borrow.getEquipment();
-        eq.setStatus("BORROWED");
-        equipmentRepository.save(eq);
+        equipment.setStatus(EquipmentStatus.BORROWED);
+        equipmentRepository.save(equipment);
 
         return borrowRepository.save(borrow);
     }
@@ -279,12 +294,12 @@ public class BorrowService {
         Borrow borrow = borrowRepository.findByIdWithLock(borrowId)
                 .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
 
-        validateCanApprove(borrow);
+        stateConstraintService.assertBorrowOperationAllowed(BusinessOperation.APPROVE_BORROW, borrow);
 
         User approver = userRepository.findById(approverId)
                 .orElseThrow(() -> new BusinessException(404, "审批人不存在"));
 
-        borrow.setStatus(STATUS_REJECTED);
+        borrow.setStatus(BorrowStatus.REJECTED);
         borrow.setApprover(approver);
         borrow.setRejectReason(rejectReason.trim());
         borrow.setRejectTime(LocalDateTime.now());
@@ -293,43 +308,25 @@ public class BorrowService {
         return borrowRepository.save(borrow);
     }
 
-    private void validateCanApprove(Borrow borrow) {
-        String status = borrow.getStatus();
-        if (STATUS_APPROVED.equals(status)) {
-            throw new BusinessException("该申请已被批准，无需重复审批");
-        }
-        if (STATUS_REJECTED.equals(status)) {
-            throw new BusinessException("该申请已被拒绝，无法重复审批");
-        }
-        if (STATUS_RETURNED.equals(status)) {
-            throw new BusinessException("该借用已归还，无法审批");
-        }
-        if (STATUS_CANCELLED.equals(status)) {
-            throw new BusinessException("该申请已取消，无法审批");
-        }
-        if (!STATUS_PENDING.equals(status)) {
-            throw new BusinessException("当前状态不允许审批，仅待审批状态的申请可以审批");
-        }
-        if (borrow.getApprover() != null) {
-            throw new BusinessException("该申请已被审批，请勿重复操作");
-        }
-    }
-
     @Transactional
     public Borrow returnEquipment(Long borrowId) {
         checkCanApplyOrManage();
         Borrow borrow = borrowRepository.findByIdWithLock(borrowId)
                 .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
 
-        if (!STATUS_APPROVED.equals(borrow.getStatus())) {
-            throw new BusinessException("当前状态不允许归还，仅已批准状态的借用可以归还");
+        stateConstraintService.assertBorrowOperationAllowed(BusinessOperation.RETURN_EQUIPMENT, borrow);
+
+        borrow.setStatus(BorrowStatus.RETURNED);
+
+        Equipment equipment = borrow.getEquipment();
+        if (equipment != null) {
+            equipment = equipmentRepository.findByIdWithLock(equipment.getId())
+                    .orElseThrow(() -> new BusinessException(404, "设备不存在"));
+            if (!repairRepository.hasActiveRepairsByEquipment(equipment.getId())) {
+                equipment.setStatus(EquipmentStatus.NORMAL);
+            }
+            equipmentRepository.save(equipment);
         }
-
-        borrow.setStatus(STATUS_RETURNED);
-
-        Equipment eq = borrow.getEquipment();
-        eq.setStatus("NORMAL");
-        equipmentRepository.save(eq);
 
         return borrowRepository.save(borrow);
     }
@@ -364,7 +361,7 @@ public class BorrowService {
 
             if (StringUtils.hasText(query.getStatus())) {
                 spec = spec.and((r, q, cb) ->
-                    cb.equal(r.get("status"), query.getStatus()));
+                    cb.equal(r.get("status"), BorrowStatus.valueOf(query.getStatus())));
             }
 
             if (query.getStartTime() != null) {
@@ -397,33 +394,22 @@ public class BorrowService {
 
         checkCanCancel(borrow);
 
-        String status = borrow.getStatus();
-        if (STATUS_APPROVED.equals(status)) {
-            throw new BusinessException("该申请已被批准，无法取消，请走归还流程");
-        }
-        if (STATUS_RETURNED.equals(status)) {
-            throw new BusinessException("该借用已归还，无法取消");
-        }
-        if (STATUS_REJECTED.equals(status)) {
-            throw new BusinessException("该申请已被拒绝，无需取消");
-        }
-        if (STATUS_CANCELLED.equals(status)) {
-            throw new BusinessException("该申请已取消，请勿重复操作");
-        }
-        if (!STATUS_PENDING.equals(status)) {
-            throw new BusinessException("当前状态不允许取消，仅待审批状态的申请可以取消");
-        }
+        stateConstraintService.assertBorrowOperationAllowed(BusinessOperation.CANCEL_BORROW, borrow);
 
         User operator = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(404, "操作人不存在"));
 
-        borrow.setStatus(STATUS_CANCELLED);
+        borrow.setStatus(BorrowStatus.CANCELLED);
         borrow.setCancelTime(LocalDateTime.now());
         borrow.setCancelOperator(operator.getName());
 
         Equipment equipment = borrow.getEquipment();
-        if (equipment != null && "BORROWED".equals(equipment.getStatus())) {
-            equipment.setStatus("NORMAL");
+        if (equipment != null && equipment.getStatus() == EquipmentStatus.BORROWED) {
+            equipment = equipmentRepository.findByIdWithLock(equipment.getId())
+                    .orElseThrow(() -> new BusinessException(404, "设备不存在"));
+            if (!repairRepository.hasActiveRepairsByEquipment(equipment.getId())) {
+                equipment.setStatus(EquipmentStatus.NORMAL);
+            }
             equipmentRepository.save(equipment);
         }
 
@@ -438,11 +424,16 @@ public class BorrowService {
                 .orElseThrow(() -> new BusinessException(404, "借用记录不存在"));
 
         Equipment equipment = borrow.getEquipment();
-        if (equipment != null && "BORROWED".equals(equipment.getStatus())) {
-            equipment.setStatus("NORMAL");
+        if (equipment != null && equipment.getStatus() == EquipmentStatus.BORROWED) {
+            equipment = equipmentRepository.findByIdWithLock(equipment.getId())
+                    .orElseThrow(() -> new BusinessException(404, "设备不存在"));
+            if (!repairRepository.hasActiveRepairsByEquipment(equipment.getId())) {
+                equipment.setStatus(EquipmentStatus.NORMAL);
+            }
             equipmentRepository.save(equipment);
         }
 
         borrowRepository.deleteById(id);
     }
+
 }

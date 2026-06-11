@@ -3,6 +3,8 @@ package com.example.lab.service;
 import com.example.lab.dto.PendingItemDTO;
 import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Repair;
+import com.example.lab.enums.BorrowStatus;
+import com.example.lab.enums.RepairStatus;
 import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.RepairRepository;
@@ -30,10 +32,10 @@ public class StatsService {
         Map<String, Long> stats = new HashMap<>();
         
         stats.put("equipmentCount", equipmentRepository.count());
-        stats.put("borrowCount", borrowRepository.countByStatus("APPROVED"));
-        stats.put("overdue", borrowRepository.countOverdue("APPROVED", LocalDateTime.now()));
-        stats.put("repairCount", repairRepository.countByStatusNot("FINISHED"));
-        stats.put("pendingBorrowCount", borrowRepository.countByStatus("PENDING"));
+        stats.put("borrowCount", borrowRepository.countByStatus(BorrowStatus.APPROVED));
+        stats.put("overdue", borrowRepository.countOverdue(BorrowStatus.APPROVED, LocalDateTime.now()));
+        stats.put("repairCount", repairRepository.countByStatusNot(RepairStatus.FINISHED));
+        stats.put("pendingBorrowCount", borrowRepository.countByStatus(BorrowStatus.PENDING));
         stats.put("recentRepairCount", repairRepository.countByReportDateAfter(LocalDateTime.now().minusDays(7)));
         
         return stats;
@@ -42,26 +44,26 @@ public class StatsService {
     public List<PendingItemDTO> getPendingItems() {
         List<PendingItemDTO> items = new ArrayList<>();
 
-        List<Borrow> pendingBorrows = borrowRepository.findByStatusOrderByApplyDateDesc("PENDING");
+        List<Borrow> pendingBorrows = borrowRepository.findByStatusOrderByApplyDateDesc(BorrowStatus.PENDING);
         for (Borrow b : pendingBorrows) {
             PendingItemDTO dto = new PendingItemDTO();
             dto.setId(b.getId());
             dto.setType("BORROW");
             dto.setEquipmentName(b.getEquipment() != null ? b.getEquipment().getName() : "");
-            dto.setStatus(b.getStatus());
+            dto.setStatus(b.getStatus() != null ? b.getStatus().getCode() : null);
             dto.setTime(b.getApplyDate());
             dto.setUserName(b.getApplicant() != null ? b.getApplicant().getName() : "");
             dto.setDescription(b.getPurpose());
             items.add(dto);
         }
 
-        List<Repair> unfinishedRepairs = repairRepository.findByStatusNotOrderByReportDateDesc("FINISHED");
+        List<Repair> unfinishedRepairs = repairRepository.findByStatusNotOrderByReportDateDesc(RepairStatus.FINISHED);
         for (Repair r : unfinishedRepairs) {
             PendingItemDTO dto = new PendingItemDTO();
             dto.setId(r.getId());
             dto.setType("REPAIR");
             dto.setEquipmentName(r.getEquipment() != null ? r.getEquipment().getName() : "");
-            dto.setStatus(r.getStatus());
+            dto.setStatus(r.getStatus() != null ? r.getStatus().getCode() : null);
             dto.setTime(r.getReportDate());
             dto.setUserName(r.getReporter() != null ? r.getReporter().getName() : "");
             dto.setDescription(r.getDescription());

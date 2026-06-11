@@ -1,12 +1,12 @@
 package com.example.lab.entity;
 
+import com.example.lab.enums.EquipmentStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -44,8 +44,9 @@ public class Equipment {
     @JoinColumn(name = "lab_id")
     private Lab lab;
 
-    @Pattern(regexp = "^(NORMAL|BORROWED|REPAIRING|SCRAPPED)$", message = "状态必须是 NORMAL、BORROWED、REPAIRING 或 SCRAPPED")
-    private String status; // NORMAL, BORROWED, REPAIRING, SCRAPPED
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", columnDefinition = "VARCHAR(20) DEFAULT 'NORMAL'")
+    private EquipmentStatus status;
 
     @Min(value = 0, message = "使用寿命不能为负数")
     private Integer lifeSpan; // in years

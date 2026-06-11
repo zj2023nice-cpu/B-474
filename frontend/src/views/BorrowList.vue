@@ -6,11 +6,11 @@
         <template #title>学生账号仅可查看借用记录，如需申请请联系教师</template>
       </el-alert>
       <el-select v-model="searchForm.status" placeholder="状态筛选" style="width: 130px; margin-left: 10px" clearable @change="handleSearch">
-        <el-option label="待审批" value="PENDING" />
-        <el-option label="已批准" value="APPROVED" />
-        <el-option label="已归还" value="RETURNED" />
-        <el-option label="已拒绝" value="REJECTED" />
-        <el-option label="已取消" value="CANCELLED" />
+        <el-option label="待审批" :value="BorrowStatus.PENDING" />
+        <el-option label="已批准" :value="BorrowStatus.APPROVED" />
+        <el-option label="已归还" :value="BorrowStatus.RETURNED" />
+        <el-option label="已拒绝" :value="BorrowStatus.REJECTED" />
+        <el-option label="已取消" :value="BorrowStatus.CANCELLED" />
       </el-select>
       <el-button type="primary" style="margin-left: 10px" @click="handleSearch">搜索</el-button>
       <el-button style="margin-left: 10px" @click="resetSearch">重置</el-button>
@@ -28,7 +28,9 @@
       <el-table-column prop="endTime" label="结束时间" width="160" />
       <el-table-column prop="status" label="状态" width="90">
         <template #default="scope">
-          <el-tag :type="getStatusType(scope.row.status)">{{ getStatusText(scope.row.status) }}</el-tag>
+          <el-tag :type="getBorrowStatusType(scope.row.status)">
+            {{ getBorrowStatusText(scope.row.status) }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="审批人" width="90">
@@ -50,24 +52,60 @@
       </el-table-column>
       <el-table-column v-if="canApply" label="操作" width="280" fixed="right">
         <template #default="scope">
-          <div v-if="isAdmin && scope.row.status === 'PENDING'">
-            <el-button 
-              type="success" 
-              size="small" 
-              :loading="approvalSubmitting" 
-              :disabled="approvalSubmitting"
-              @click="handleApprove(scope.row)"
-            >批准</el-button>
-            <el-button 
-              type="danger" 
-              size="small" 
-              :loading="approvalSubmitting" 
-              :disabled="approvalSubmitting"
-              @click="handleReject(scope.row)"
-            >拒绝</el-button>
+          <div v-if="isAdmin && scope.row.status === BorrowStatus.PENDING">
+            <el-tooltip 
+              v-if="!getBorrowOperationAllowed(scope.row, BusinessOperation.APPROVE_BORROW)"
+              :content="getBorrowOperationDisabledReason(scope.row, BusinessOperation.APPROVE_BORROW)"
+              placement="top"
+            >
+              <el-button 
+                type="success" 
+                size="small" 
+                disabled
+              >批准</el-button>
+            </el-tooltip>
+            <el-tooltip 
+              v-if="!getBorrowOperationAllowed(scope.row, BusinessOperation.APPROVE_BORROW)"
+              :content="getBorrowOperationDisabledReason(scope.row, BusinessOperation.APPROVE_BORROW)"
+              placement="top"
+            >
+              <el-button 
+                type="danger" 
+                size="small" 
+                disabled
+              >拒绝</el-button>
+            </el-tooltip>
+            <template v-else>
+              <el-button 
+                type="success" 
+                size="small" 
+                :loading="approvalSubmitting" 
+                :disabled="approvalSubmitting"
+                @click="handleApprove(scope.row)"
+              >批准</el-button>
+              <el-button 
+                type="danger" 
+                size="small" 
+                :loading="approvalSubmitting" 
+                :disabled="approvalSubmitting"
+                @click="handleReject(scope.row)"
+              >拒绝</el-button>
+            </template>
           </div>
-          <div v-if="scope.row.status === 'PENDING' && (isAdmin || scope.row.applicant?.id === userStore.user.id)">
+          <div v-if="scope.row.status === BorrowStatus.PENDING && (isAdmin || scope.row.applicant?.id === userStore.user.id)">
+            <el-tooltip 
+              v-if="!getBorrowOperationAllowed(scope.row, BusinessOperation.CANCEL_BORROW)"
+              :content="getBorrowOperationDisabledReason(scope.row, BusinessOperation.CANCEL_BORROW)"
+              placement="top"
+            >
+              <el-button 
+                type="warning" 
+                size="small" 
+                disabled
+              >取消</el-button>
+            </el-tooltip>
             <el-button 
+              v-else
               type="warning" 
               size="small" 
               :loading="cancelling && scope.row.id === currentActionId"
@@ -75,8 +113,20 @@
               @click="handleCancel(scope.row)"
             >取消</el-button>
           </div>
-          <div v-if="scope.row.status === 'APPROVED'">
+          <div v-if="scope.row.status === BorrowStatus.APPROVED">
+            <el-tooltip 
+              v-if="!getBorrowOperationAllowed(scope.row, BusinessOperation.RETURN_EQUIPMENT)"
+              :content="getBorrowOperationDisabledReason(scope.row, BusinessOperation.RETURN_EQUIPMENT)"
+              placement="top"
+            >
+              <el-button 
+                type="primary" 
+                size="small" 
+                disabled
+              >归还</el-button>
+            </el-tooltip>
             <el-button 
+              v-else
               type="primary" 
               size="small" 
               :loading="returning && scope.row.id === currentActionId"
@@ -109,8 +159,18 @@
               :key="eq.id"
               :label="`${eq.name} (${eq.code})`"
               :value="eq.id"
-              :disabled="eq.status !== 'NORMAL'"
-            />
+              :disabled="!canBorrowEquipment(eq)"
+            >
+              <span>{{ eq.name }} ({{ eq.code }})</span>
+              <el-tag 
+                v-if="!canBorrowEquipment(eq)" 
+                size="small" 
+                type="info"
+                style="margin-left: 8px"
+              >
+                {{ getEquipmentDisabledReason(eq, BusinessOperation.APPLY_BORROW) }}
+              </el-tag>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="借用时间">
@@ -145,8 +205,8 @@
               :key="conflict.borrowId"
               class="conflict-item"
             >
-              <el-tag size="small" :type="conflict.status === 'APPROVED' ? 'danger' : 'warning'">
-                {{ conflict.status === 'APPROVED' ? '已批准' : '待审批' }}
+              <el-tag size="small" :type="conflict.status === BorrowStatus.APPROVED ? 'danger' : 'warning'">
+                {{ conflict.status === BorrowStatus.APPROVED ? '已批准' : '待审批' }}
               </el-tag>
               <span class="conflict-applicant">{{ conflict.applicantName }}</span>
               <span class="conflict-time">
@@ -167,7 +227,7 @@
         <el-button
           type="primary"
           @click="handleSubmit"
-          :disabled="conflictCheckLoading || (conflictCheckResult && conflictCheckResult.hasConflict)"
+          :disabled="conflictCheckLoading || (conflictCheckResult && conflictCheckResult.hasConflict) || !form.equipmentId"
         >
           提交
         </el-button>
@@ -191,6 +251,15 @@ import request from '../api/request'
 import { useUserStore } from '../stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import BorrowApprovalDialog from '../components/BorrowApprovalDialog.vue'
+import { 
+  BorrowStatus,
+  BusinessOperation,
+  getBorrowStatusText,
+  getBorrowStatusType,
+  canBorrowEquipment,
+  getEquipmentDisabledReason
+} from '../constants/statusConstants'
+import { checkBorrowOperation } from '../api/stateConstraint'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'ADMIN')
@@ -223,6 +292,8 @@ const approvalDialogRef = ref(null)
 const approvalSubmitting = ref(false)
 const currentActionId = ref(null)
 
+const borrowOperationCache = ref(new Map())
+
 const pageData = ref({
   content: [],
   totalPages: 0,
@@ -243,6 +314,63 @@ const searchForm = reactive({
   status: ''
 })
 
+function getBorrowOperationAllowed(borrow, operation) {
+  const cacheKey = `${borrow.id}_${operation}`
+  if (borrowOperationCache.value.has(cacheKey)) {
+    return borrowOperationCache.value.get(cacheKey).allowed
+  }
+  if (operation === BusinessOperation.APPROVE_BORROW) {
+    return borrow.status === BorrowStatus.PENDING
+  }
+  if (operation === BusinessOperation.CANCEL_BORROW) {
+    return borrow.status === BorrowStatus.PENDING
+  }
+  if (operation === BusinessOperation.RETURN_EQUIPMENT) {
+    return borrow.status === BorrowStatus.APPROVED
+  }
+  return true
+}
+
+function getBorrowOperationDisabledReason(borrow, operation) {
+  const cacheKey = `${borrow.id}_${operation}`
+  if (borrowOperationCache.value.has(cacheKey)) {
+    const result = borrowOperationCache.value.get(cacheKey)
+    return result.errorMessage || '当前状态不允许此操作'
+  }
+  if (operation === BusinessOperation.APPROVE_BORROW && borrow.status !== BorrowStatus.PENDING) {
+    return '仅待审批状态的申请可以审批'
+  }
+  if (operation === BusinessOperation.CANCEL_BORROW && borrow.status !== BorrowStatus.PENDING) {
+    return '仅待审批状态的申请可以取消'
+  }
+  if (operation === BusinessOperation.RETURN_EQUIPMENT && borrow.status !== BorrowStatus.APPROVED) {
+    return '仅已批准状态的借用可以归还'
+  }
+  return '当前状态不允许此操作'
+}
+
+async function prefetchBorrowOperations(borrows) {
+  const operations = [
+    BusinessOperation.APPROVE_BORROW,
+    BusinessOperation.CANCEL_BORROW,
+    BusinessOperation.RETURN_EQUIPMENT
+  ]
+  
+  for (const borrow of borrows) {
+    for (const op of operations) {
+      const cacheKey = `${borrow.id}_${op}`
+      if (!borrowOperationCache.value.has(cacheKey)) {
+        try {
+          const result = await checkBorrowOperation(borrow.id, op)
+          borrowOperationCache.value.set(cacheKey, result)
+        } catch (e) {
+          console.warn(`Failed to check borrow operation ${op} for borrow ${borrow.id}:`, e)
+        }
+      }
+    }
+  }
+}
+
 const fetchBorrows = async () => {
   loading.value = true
   try {
@@ -262,6 +390,10 @@ const fetchBorrows = async () => {
     const response = await request.get('/borrows', { params })
     pageData.value = response
     pagination.total = response.totalElements
+    
+    if (response.content && response.content.length > 0 && canApply.value) {
+      prefetchBorrowOperations(response.content)
+    }
   } finally {
     loading.value = false
   }
@@ -302,18 +434,21 @@ const fetchBorrowsWithPageFallback = async () => {
 
 const handleSearch = () => {
   pagination.currentPage = 1
+  borrowOperationCache.value.clear()
   fetchBorrows()
 }
 
 const resetSearch = () => {
   searchForm.status = ''
   pagination.currentPage = 1
+  borrowOperationCache.value.clear()
   fetchBorrows()
 }
 
 const handleSizeChange = (size) => {
   pagination.pageSize = size
   pagination.currentPage = 1
+  borrowOperationCache.value.clear()
   fetchBorrows()
 }
 
@@ -385,6 +520,12 @@ const handleSubmit = async () => {
     return
   }
 
+  const selectedEquipment = equipments.value.find(eq => eq.id === form.value.equipmentId)
+  if (!canBorrowEquipment(selectedEquipment)) {
+    ElMessage.error(getEquipmentDisabledReason(selectedEquipment, BusinessOperation.APPLY_BORROW))
+    return
+  }
+
   const payload = {
     equipment: { id: form.value.equipmentId },
     applicant: { id: userStore.user.id },
@@ -397,6 +538,7 @@ const handleSubmit = async () => {
   try {
     await request.post('/borrows', payload)
     dialogVisible.value = false
+    borrowOperationCache.value.clear()
     fetchBorrows()
     ElMessage.success('申请已提交')
   } catch (e) {
@@ -414,25 +556,33 @@ const handleSubmit = async () => {
   }
 }
 
-const handleApprove = (row) => {
+const handleApprove = async (row) => {
   if (approvalSubmitting.value) return
-  if (row.status !== 'PENDING') {
-    ElMessage.warning('当前状态无法审批')
+  
+  const checkResult = await checkBorrowOperation(row.id, BusinessOperation.APPROVE_BORROW)
+  if (!checkResult.allowed) {
+    ElMessage.warning(checkResult.errorMessage || '当前状态无法审批')
+    borrowOperationCache.value.set(`${row.id}_${BusinessOperation.APPROVE_BORROW}`, checkResult)
     fetchBorrowsWithPageFallback()
     return
   }
+  
   approvalAction.value = 'approve'
   approvalRecord.value = { ...row }
   approvalDialogVisible.value = true
 }
 
-const handleReject = (row) => {
+const handleReject = async (row) => {
   if (approvalSubmitting.value) return
-  if (row.status !== 'PENDING') {
-    ElMessage.warning('当前状态无法审批')
+  
+  const checkResult = await checkBorrowOperation(row.id, BusinessOperation.APPROVE_BORROW)
+  if (!checkResult.allowed) {
+    ElMessage.warning(checkResult.errorMessage || '当前状态无法审批')
+    borrowOperationCache.value.set(`${row.id}_${BusinessOperation.APPROVE_BORROW}`, checkResult)
     fetchBorrowsWithPageFallback()
     return
   }
+  
   approvalAction.value = 'reject'
   approvalRecord.value = { ...row }
   approvalDialogVisible.value = true
@@ -461,11 +611,13 @@ const handleApprovalConfirm = async ({ action, rejectReason }) => {
       pageData.value.content.splice(idx, 1, result)
     }
 
+    borrowOperationCache.value.clear()
     await fetchBorrowsWithPageFallback()
 
     ElMessage.success(action === 'approve' ? '已批准' : '已拒绝')
   } catch (e) {
     approvalDialogRef.value?.handleError(e.message || '操作失败，请重试')
+    borrowOperationCache.value.clear()
     fetchBorrowsWithPageFallback()
   } finally {
     approvalSubmitting.value = false
@@ -476,8 +628,11 @@ const returning = ref(false)
 
 const handleReturn = async (row) => {
   if (returning.value) return
-  if (row.status !== 'APPROVED') {
-    ElMessage.warning('当前状态无法归还')
+  
+  const checkResult = await checkBorrowOperation(row.id, BusinessOperation.RETURN_EQUIPMENT)
+  if (!checkResult.allowed) {
+    ElMessage.warning(checkResult.errorMessage || '当前状态无法归还')
+    borrowOperationCache.value.set(`${row.id}_${BusinessOperation.RETURN_EQUIPMENT}`, checkResult)
     fetchBorrowsWithPageFallback()
     return
   }
@@ -492,9 +647,11 @@ const handleReturn = async (row) => {
       pageData.value.content.splice(idx, 1, result)
     }
 
+    borrowOperationCache.value.clear()
     await fetchBorrowsWithPageFallback()
     ElMessage.success('已归还')
   } catch (e) {
+    borrowOperationCache.value.clear()
     fetchBorrowsWithPageFallback()
   } finally {
     returning.value = false
@@ -506,55 +663,42 @@ const cancelling = ref(false)
 
 const handleCancel = (row) => {
   if (cancelling.value) return
-  if (row.status !== 'PENDING') {
-    ElMessage.warning('当前状态无法取消')
-    fetchBorrowsWithPageFallback()
-    return
-  }
+  
+  checkBorrowOperation(row.id, BusinessOperation.CANCEL_BORROW).then(checkResult => {
+    if (!checkResult.allowed) {
+      ElMessage.warning(checkResult.errorMessage || '当前状态无法取消')
+      borrowOperationCache.value.set(`${row.id}_${BusinessOperation.CANCEL_BORROW}`, checkResult)
+      fetchBorrowsWithPageFallback()
+      return
+    }
 
-  ElMessageBox.confirm('确认取消申请？取消后无法恢复。', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
-    currentActionId.value = row.id
-    cancelling.value = true
-    try {
-      const result = await request.put(`/borrows/${row.id}/cancel`)
+    ElMessageBox.confirm('确认取消申请？取消后无法恢复。', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }).then(async () => {
+      currentActionId.value = row.id
+      cancelling.value = true
+      try {
+        const result = await request.put(`/borrows/${row.id}/cancel`)
 
-      const idx = pageData.value.content.findIndex(item => item.id === row.id)
-      if (idx !== -1 && result) {
-        pageData.value.content.splice(idx, 1, result)
+        const idx = pageData.value.content.findIndex(item => item.id === row.id)
+        if (idx !== -1 && result) {
+          pageData.value.content.splice(idx, 1, result)
+        }
+
+        borrowOperationCache.value.clear()
+        await fetchBorrowsWithPageFallback()
+        ElMessage.success('已取消')
+      } finally {
+        cancelling.value = false
+        currentActionId.value = null
       }
-
-      await fetchBorrowsWithPageFallback()
-      ElMessage.success('已取消')
-    } finally {
+    }).catch(() => {
       cancelling.value = false
       currentActionId.value = null
-    }
-  }).catch(() => {
-    cancelling.value = false
-    currentActionId.value = null
+    })
   })
-}
-
-const getStatusType = (status) => {
-  if (status === 'APPROVED') return 'success'
-  if (status === 'PENDING') return 'warning'
-  if (status === 'RETURNED') return 'info'
-  if (status === 'REJECTED') return 'danger'
-  if (status === 'CANCELLED') return 'info'
-  return 'info'
-}
-
-const getStatusText = (status) => {
-  if (status === 'APPROVED') return '已批准'
-  if (status === 'PENDING') return '待审批'
-  if (status === 'RETURNED') return '已归还'
-  if (status === 'REJECTED') return '已拒绝'
-  if (status === 'CANCELLED') return '已取消'
-  return status || '-'
 }
 
 onMounted(fetchBorrows)

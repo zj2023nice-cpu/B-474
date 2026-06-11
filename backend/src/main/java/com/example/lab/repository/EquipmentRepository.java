@@ -1,6 +1,7 @@
 package com.example.lab.repository;
 
 import com.example.lab.entity.Equipment;
+import com.example.lab.enums.EquipmentStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -16,14 +17,14 @@ import java.util.Optional;
 
 public interface EquipmentRepository extends JpaRepository<Equipment, Long>, JpaSpecificationExecutor<Equipment> {
     List<Equipment> findByLab_Id(Long labId);
-    List<Equipment> findByStatus(String status);
+    List<Equipment> findByStatus(EquipmentStatus status);
     
     Page<Equipment> findAll(Specification<Equipment> spec, Pageable pageable);
     
-    List<Equipment> findByStatusNot(String status);
+    List<Equipment> findByStatusNot(EquipmentStatus status);
 
     long countByLab_Id(Long labId);
-    long countByLab_IdAndStatus(Long labId, String status);
+    long countByLab_IdAndStatus(Long labId, EquipmentStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT e FROM Equipment e WHERE e.id = :id")

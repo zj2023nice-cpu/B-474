@@ -3,6 +3,8 @@ package com.example.lab.service;
 import com.example.lab.dto.FinishRepairRequest;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Repair;
+import com.example.lab.enums.EquipmentStatus;
+import com.example.lab.enums.RepairStatus;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.RepairRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,12 +43,12 @@ class RepairServiceTest {
         testEquipment = new Equipment();
         testEquipment.setId(1L);
         testEquipment.setName("显微镜");
-        testEquipment.setStatus("NORMAL");
+        testEquipment.setStatus(EquipmentStatus.NORMAL);
 
         testRepair = new Repair();
         testRepair.setId(1L);
         testRepair.setEquipment(testEquipment);
-        testRepair.setStatus("REPORTED");
+        testRepair.setStatus(RepairStatus.REPORTED);
         testRepair.setDescription("设备故障报修");
     }
 
@@ -60,13 +62,13 @@ class RepairServiceTest {
 
         Equipment repairingEquipment = new Equipment();
         repairingEquipment.setId(testEquipment.getId());
-        repairingEquipment.setStatus("REPAIRING");
+        repairingEquipment.setStatus(EquipmentStatus.REPAIRING);
 
         when(equipmentRepository.save(testEquipment)).thenReturn(repairingEquipment);
 
         Repair savedRepair = new Repair();
         savedRepair.setId(1L);
-        savedRepair.setStatus("REPORTED");
+        savedRepair.setStatus(RepairStatus.REPORTED);
         savedRepair.setEquipment(repairingEquipment);
 
         when(repairRepository.save(any(Repair.class))).thenReturn(savedRepair);
@@ -74,9 +76,9 @@ class RepairServiceTest {
         Repair result = repairService.report(newRepair);
 
         assertNotNull(result);
-        assertEquals("REPORTED", result.getStatus());
+        assertEquals(RepairStatus.REPORTED, result.getStatus());
         assertNotNull(result.getReportDate());
-        assertEquals("REPAIRING", result.getEquipment().getStatus());
+        assertEquals(EquipmentStatus.REPAIRING, result.getEquipment().getStatus());
 
         verify(equipmentRepository).findById(testEquipment.getId());
         verify(equipmentRepository).save(testEquipment);
@@ -103,14 +105,14 @@ class RepairServiceTest {
 
         Repair reportedRepair = new Repair();
         reportedRepair.setId(repairId);
-        reportedRepair.setStatus("REPORTED");
+        reportedRepair.setStatus(RepairStatus.REPORTED);
         reportedRepair.setEquipment(testEquipment);
 
         when(repairRepository.findById(repairId)).thenReturn(Optional.of(reportedRepair));
 
         Repair finishedRepair = new Repair();
         finishedRepair.setId(repairId);
-        finishedRepair.setStatus("FINISHED");
+        finishedRepair.setStatus(RepairStatus.FINISHED);
         finishedRepair.setEquipment(testEquipment);
         finishedRepair.setRepairConclusion("已修复");
 
@@ -119,7 +121,7 @@ class RepairServiceTest {
 
         Equipment normalEquipment = new Equipment();
         normalEquipment.setId(testEquipment.getId());
-        normalEquipment.setStatus("NORMAL");
+        normalEquipment.setStatus(EquipmentStatus.NORMAL);
 
         when(equipmentRepository.save(testEquipment)).thenReturn(normalEquipment);
 
@@ -131,7 +133,7 @@ class RepairServiceTest {
         Repair result = repairService.finish(repairId, request);
 
         assertNotNull(result);
-        assertEquals("FINISHED", result.getStatus());
+        assertEquals(RepairStatus.FINISHED, result.getStatus());
         assertNotNull(result.getFinishDate());
         assertEquals("已修复", result.getRepairConclusion());
 
@@ -147,14 +149,14 @@ class RepairServiceTest {
 
         Repair reportedRepair = new Repair();
         reportedRepair.setId(repairId);
-        reportedRepair.setStatus("REPORTED");
+        reportedRepair.setStatus(RepairStatus.REPORTED);
         reportedRepair.setEquipment(testEquipment);
 
         when(repairRepository.findById(repairId)).thenReturn(Optional.of(reportedRepair));
 
         Repair finishedRepair = new Repair();
         finishedRepair.setId(repairId);
-        finishedRepair.setStatus("FINISHED");
+        finishedRepair.setStatus(RepairStatus.FINISHED);
         finishedRepair.setEquipment(testEquipment);
         finishedRepair.setRepairConclusion("维修完毕");
 
@@ -167,7 +169,7 @@ class RepairServiceTest {
         Repair result = repairService.finish(repairId, request);
 
         assertNotNull(result);
-        assertEquals("FINISHED", result.getStatus());
+        assertEquals(RepairStatus.FINISHED, result.getStatus());
         assertEquals("维修完毕", result.getRepairConclusion());
 
         verify(repairRepository).hasActiveRepairsByEquipment(testEquipment.getId());
@@ -207,7 +209,7 @@ class RepairServiceTest {
 
         Equipment normalEquipment = new Equipment();
         normalEquipment.setId(testEquipment.getId());
-        normalEquipment.setStatus("NORMAL");
+        normalEquipment.setStatus(EquipmentStatus.NORMAL);
 
         when(equipmentRepository.save(testEquipment)).thenReturn(normalEquipment);
 

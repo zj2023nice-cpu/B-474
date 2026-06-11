@@ -2,6 +2,7 @@ package com.example.lab.service;
 
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Lab;
+import com.example.lab.enums.EquipmentStatus;
 import com.example.lab.repository.EquipmentRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -38,7 +39,7 @@ public class EquipmentPersistenceHelper {
         toSave.setLifeSpan(source.getLifeSpan());
         toSave.setLab(lab);
         toSave.setCode(code);
-        toSave.setStatus("NORMAL");
+        toSave.setStatus(EquipmentStatus.NORMAL);
         return equipmentRepository.save(toSave);
     }
 }

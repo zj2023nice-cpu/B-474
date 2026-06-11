@@ -8,6 +8,7 @@ import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Lab;
 import com.example.lab.entity.Repair;
+import com.example.lab.enums.EquipmentStatus;
 import com.example.lab.exception.BusinessException;
 import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
@@ -148,7 +149,7 @@ public class EquipmentService {
             
             if (StringUtils.hasText(query.getStatus())) {
                 spec = spec.and((r, q, cb) -> 
-                    cb.equal(r.get("status"), query.getStatus()));
+                    cb.equal(r.get("status"), EquipmentStatus.valueOf(query.getStatus())));
             }
             
             if (query.getLabId() != null) {
@@ -184,7 +185,7 @@ public class EquipmentService {
         dto.setPurchaseDate(equipment.getPurchaseDate());
         dto.setPrice(equipment.getPrice());
         dto.setLifeSpan(equipment.getLifeSpan());
-        dto.setStatus(equipment.getStatus());
+        dto.setStatus(equipment.getStatus() != null ? equipment.getStatus().getCode() : null);
 
         if (equipment.getLab() != null) {
             EquipmentDetailDTO.LabInfo labInfo = new EquipmentDetailDTO.LabInfo();
@@ -216,7 +217,7 @@ public class EquipmentService {
             borrowDTO.setStartTime(latestBorrow.getStartTime());
             borrowDTO.setEndTime(latestBorrow.getEndTime());
             borrowDTO.setPurpose(latestBorrow.getPurpose());
-            borrowDTO.setStatus(latestBorrow.getStatus());
+            borrowDTO.setStatus(latestBorrow.getStatus() != null ? latestBorrow.getStatus().getCode() : null);
             dto.setLatestBorrow(borrowDTO);
         }
 
@@ -230,7 +231,7 @@ public class EquipmentService {
             repairDTO.setCost(latestRepair.getCost());
             repairDTO.setRepairConclusion(latestRepair.getRepairConclusion());
             repairDTO.setFinishDate(latestRepair.getFinishDate());
-            repairDTO.setStatus(latestRepair.getStatus());
+            repairDTO.setStatus(latestRepair.getStatus() != null ? latestRepair.getStatus().getCode() : null);
             repairDTO.setReporterName(latestRepair.getReporter() != null ? latestRepair.getReporter().getName() : null);
             dto.setLatestRepair(repairDTO);
         }
@@ -242,7 +243,7 @@ public class EquipmentService {
         LocalDate today = LocalDate.now();
         LocalDate futureDate = today.plusDays(30);
         
-        List<Equipment> activeEquipments = equipmentRepository.findByStatusNot("SCRAPPED");
+        List<Equipment> activeEquipments = equipmentRepository.findByStatusNot(EquipmentStatus.SCRAPPED);
         
         return activeEquipments.stream()
             .filter(e -> {
@@ -264,7 +265,7 @@ public class EquipmentService {
         LocalDate today = LocalDate.now();
 
         Specification<Equipment> spec = Specification.where((root, q, cb) ->
-                cb.notEqual(root.get("status"), "SCRAPPED"));
+                cb.notEqual(root.get("status"), EquipmentStatus.SCRAPPED));
 
         if (query.getLabId() != null) {
             spec = spec.and((root, q, cb) ->
@@ -272,9 +273,9 @@ public class EquipmentService {
         }
 
         if (StringUtils.hasText(query.getStatus())) {
-            spec = spec.and((root, q, cb) ->
-                    cb.equal(root.get("status"), query.getStatus()));
-        }
+                spec = spec.and((root, q, cb) ->
+                        cb.equal(root.get("status"), EquipmentStatus.valueOf(query.getStatus())));
+            }
 
         List<Equipment> all = equipmentRepository.findAll(spec);
 
@@ -288,7 +289,7 @@ public class EquipmentService {
             dto.setPurchaseDate(e.getPurchaseDate());
             dto.setPrice(e.getPrice());
             dto.setLifeSpan(e.getLifeSpan());
-            dto.setStatus(e.getStatus());
+            dto.setStatus(e.getStatus() != null ? e.getStatus().getCode() : null);
 
             if (e.getLab() != null) {
                 ExpiringEquipmentDTO.LabInfo labInfo = new ExpiringEquipmentDTO.LabInfo();

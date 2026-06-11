@@ -5,10 +5,15 @@ import com.example.lab.dto.FinishRepairRequest;
 import com.example.lab.dto.RepairQuery;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Repair;
+import com.example.lab.entity.User;
+import com.example.lab.enums.BusinessOperation;
+import com.example.lab.enums.EquipmentStatus;
+import com.example.lab.enums.RepairStatus;
 import com.example.lab.exception.BusinessException;
 import com.example.lab.exception.ResourceNotFoundException;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.RepairRepository;
+import com.example.lab.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,23 +29,22 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.List;
 
 @Service
 public class RepairService {
-
-    private static final List<String> ACTIVE_STATUSES = Arrays.asList("REPORTED", "IN_PROGRESS");
-    private static final String STATUS_FINISHED = "FINISHED";
-    private static final String STATUS_REPORTED = "REPORTED";
-    private static final String EQUIPMENT_STATUS_REPAIRING = "REPAIRING";
-    private static final String EQUIPMENT_STATUS_NORMAL = "NORMAL";
 
     @Autowired
     private RepairRepository repairRepository;
     
     @Autowired
     private EquipmentRepository equipmentRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private StateConstraintService stateConstraintService;
 
     private void checkCanReportOrManage() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -55,21 +59,41 @@ public class RepairService {
         }
     }
 
+    private Long getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            throw new BusinessException("请先登录");
+        }
+        return (Long) authentication.getPrincipal();
+    }
+
     @Transactional
     public Repair report(Repair repair) {
         checkCanReportOrManage();
-        repair.setStatus(STATUS_REPORTED);
+
+        if (repair.getEquipment() == null || repair.getEquipment().getId() == null) {
+            throw new BusinessException("请选择要报修的设备");
+        }
+
+        Long currentUserId = getCurrentUserId();
+        User reporter = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new BusinessException(404, "当前用户不存在"));
+
+        Equipment equipment = equipmentRepository.findByIdWithLock(repair.getEquipment().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("设备不存在"));
+
+        stateConstraintService.assertOperationAllowed(BusinessOperation.REPORT_REPAIR, equipment);
+
+        repair.setStatus(RepairStatus.REPORTED);
         repair.setReportDate(LocalDateTime.now());
         repair.setRepairConclusion(null);
         repair.setRepairCompany(null);
         repair.setCost(null);
         repair.setFinishDate(null);
+        repair.setReporter(reporter);
         
-        Equipment eq = equipmentRepository.findById(repair.getEquipment().getId())
-            .orElseThrow(() -> new ResourceNotFoundException("设备不存在"));
-        
-        eq.setStatus(EQUIPMENT_STATUS_REPAIRING);
-        equipmentRepository.save(eq);
+        equipment.setStatus(EquipmentStatus.REPAIRING);
+        equipmentRepository.save(equipment);
         
         return repairRepository.save(repair);
     }
@@ -78,21 +102,15 @@ public class RepairService {
     public Repair finish(Long repairId, FinishRepairRequest request) {
         Repair repair = repairRepository.findById(repairId)
             .orElseThrow(() -> new ResourceNotFoundException("维修记录不存在"));
-        
-        if (STATUS_FINISHED.equals(repair.getStatus())) {
-            throw new BusinessException("该维修记录已完成，请勿重复操作");
-        }
-        
-        if (!ACTIVE_STATUSES.contains(repair.getStatus())) {
-            throw new BusinessException("当前状态不允许完成维修");
-        }
-        
+
+        stateConstraintService.assertRepairOperationAllowed(BusinessOperation.FINISH_REPAIR, repair);
+
         String conclusion = request.getRepairConclusion();
         if (!StringUtils.hasText(conclusion)) {
             throw new BusinessException("维修结论不能为空");
         }
         
-        repair.setStatus(STATUS_FINISHED);
+        repair.setStatus(RepairStatus.FINISHED);
         repair.setFinishDate(LocalDateTime.now());
         repair.setRepairConclusion(conclusion.trim());
         
@@ -104,11 +122,13 @@ public class RepairService {
         
         repair = repairRepository.save(repair);
         
-        Equipment eq = repair.getEquipment();
-        if (!repairRepository.hasActiveRepairsByEquipment(eq.getId())) {
-            eq.setStatus(EQUIPMENT_STATUS_NORMAL);
-            equipmentRepository.save(eq);
+        Equipment equipment = repair.getEquipment();
+        equipment = equipmentRepository.findByIdWithLock(equipment.getId())
+                .orElseThrow(() -> new BusinessException(404, "设备不存在"));
+        if (!repairRepository.hasActiveRepairsByEquipment(equipment.getId())) {
+            equipment.setStatus(EquipmentStatus.NORMAL);
         }
+        equipmentRepository.save(equipment);
         
         return repair;
     }
@@ -139,7 +159,7 @@ public class RepairService {
             
             if (StringUtils.hasText(query.getStatus())) {
                 spec = spec.and((r, q, cb) -> 
-                    cb.equal(r.get("status"), query.getStatus()));
+                    cb.equal(r.get("status"), RepairStatus.valueOf(query.getStatus())));
             }
             
             if (query.getReportDateStart() != null) {
@@ -167,13 +187,18 @@ public class RepairService {
     public void delete(Long id) {
         Repair repair = repairRepository.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException("维修记录不存在"));
-        Equipment eq = repair.getEquipment();
+
+        stateConstraintService.assertRepairOperationAllowed(BusinessOperation.CANCEL_REPAIR, repair);
+
+        Equipment equipment = repair.getEquipment();
         
         repairRepository.deleteById(id);
         
-        if (!repairRepository.hasActiveRepairsByEquipment(eq.getId())) {
-            eq.setStatus(EQUIPMENT_STATUS_NORMAL);
-            equipmentRepository.save(eq);
+        equipment = equipmentRepository.findByIdWithLock(equipment.getId())
+                .orElseThrow(() -> new BusinessException(404, "设备不存在"));
+        if (!repairRepository.hasActiveRepairsByEquipment(equipment.getId())) {
+            equipment.setStatus(EquipmentStatus.NORMAL);
         }
+        equipmentRepository.save(equipment);
     }
 }

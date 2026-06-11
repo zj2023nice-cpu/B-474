@@ -6,6 +6,9 @@ import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Lab;
 import com.example.lab.entity.Repair;
+import com.example.lab.enums.BorrowStatus;
+import com.example.lab.enums.EquipmentStatus;
+import com.example.lab.enums.RepairStatus;
 import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.LabRepository;
@@ -42,7 +45,10 @@ public class LabService {
     @Autowired
     private RepairRepository repairRepository;
 
-    private static final String[] EQUIPMENT_STATUSES = {"NORMAL", "BORROWED", "REPAIRING", "SCRAPPED"};
+    private static final EquipmentStatus[] EQUIPMENT_STATUSES = {
+            EquipmentStatus.NORMAL, EquipmentStatus.BORROWED,
+            EquipmentStatus.REPAIRING, EquipmentStatus.SCRAPPED
+    };
 
     public Lab save(Lab lab) {
         return labRepository.save(lab);
@@ -105,8 +111,8 @@ public class LabService {
         dto.setTotalEquipment(total);
 
         Map<String, Long> statusCounts = new LinkedHashMap<>();
-        for (String status : EQUIPMENT_STATUSES) {
-            statusCounts.put(status, equipmentRepository.countByLab_IdAndStatus(id, status));
+        for (EquipmentStatus status : EQUIPMENT_STATUSES) {
+            statusCounts.put(status.getCode(), equipmentRepository.countByLab_IdAndStatus(id, status));
         }
         dto.setStatusCounts(statusCounts);
 
@@ -115,7 +121,7 @@ public class LabService {
         LocalDate today = LocalDate.now();
         LocalDate futureDate = today.plusDays(30);
         List<LabDetailDTO.EquipmentSummary> expiringList = labEquipments.stream()
-                .filter(e -> !"SCRAPPED".equals(e.getStatus()))
+                .filter(e -> e.getStatus() != EquipmentStatus.SCRAPPED)
                 .filter(e -> e.getPurchaseDate() != null && e.getLifeSpan() != null)
                 .filter(e -> {
                     LocalDate expiry = e.getPurchaseDate().plusYears(e.getLifeSpan());
@@ -136,7 +142,7 @@ public class LabService {
         dto.setExpiringEquipments(expiringList);
         dto.setExpiringCount(expiringList.size());
 
-        List<Borrow> activeBorrows = borrowRepository.findByEquipment_Lab_IdAndStatusIn(id, Arrays.asList("APPROVED"));
+        List<Borrow> activeBorrows = borrowRepository.findByEquipment_Lab_IdAndStatusIn(id, Arrays.asList(BorrowStatus.APPROVED));
         dto.setActiveBorrowCount(activeBorrows.size());
         dto.setActiveBorrows(activeBorrows.stream()
                 .sorted(Comparator.comparing(Borrow::getApplyDate).reversed())
@@ -154,7 +160,7 @@ public class LabService {
                 })
                 .collect(Collectors.toList()));
 
-        List<Repair> activeRepairs = repairRepository.findByEquipment_Lab_IdAndStatusNot(id, "FINISHED");
+        List<Repair> activeRepairs = repairRepository.findByEquipment_Lab_IdAndStatusNot(id, RepairStatus.FINISHED);
         dto.setActiveRepairCount(activeRepairs.size());
         dto.setActiveRepairs(activeRepairs.stream()
                 .sorted(Comparator.comparing(Repair::getReportDate).reversed())
@@ -166,7 +172,7 @@ public class LabService {
                     rs.setEquipmentCode(r.getEquipment() != null ? r.getEquipment().getCode() : null);
                     rs.setDescription(r.getDescription());
                     rs.setReportDate(r.getReportDate());
-                    rs.setStatus(r.getStatus());
+                    rs.setStatus(r.getStatus() != null ? r.getStatus().getCode() : null);
                     return rs;
                 })
                 .collect(Collectors.toList()));

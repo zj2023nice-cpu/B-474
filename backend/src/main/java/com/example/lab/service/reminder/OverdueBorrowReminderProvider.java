@@ -4,6 +4,7 @@ import com.example.lab.dto.reminder.ReminderItem;
 import com.example.lab.dto.reminder.ReminderModule;
 import com.example.lab.dto.reminder.ReminderPriority;
 import com.example.lab.entity.Borrow;
+import com.example.lab.enums.BorrowStatus;
 import com.example.lab.repository.BorrowRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -29,7 +30,7 @@ public class OverdueBorrowReminderProvider implements ReminderProvider {
     @Override
     public ReminderModule buildModule() {
         LocalDateTime now = LocalDateTime.now();
-        List<Borrow> overdues = borrowRepository.findOverdue("APPROVED", now);
+        List<Borrow> overdues = borrowRepository.findOverdue(BorrowStatus.APPROVED, now);
 
         ReminderModule module = new ReminderModule();
         module.setKey(getKey());

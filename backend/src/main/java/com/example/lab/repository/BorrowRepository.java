@@ -1,6 +1,7 @@
 package com.example.lab.repository;
 
 import com.example.lab.entity.Borrow;
+import com.example.lab.enums.BorrowStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -13,24 +14,25 @@ import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface BorrowRepository extends JpaRepository<Borrow, Long>, JpaSpecificationExecutor<Borrow> {
     List<Borrow> findByApplicant_Id(Long applicantId);
-    List<Borrow> findByStatus(String status);
-    List<Borrow> findByStatusOrderByApplyDateDesc(String status);
+    List<Borrow> findByStatus(BorrowStatus status);
+    List<Borrow> findByStatusOrderByApplyDateDesc(BorrowStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT b FROM Borrow b WHERE b.id = :id")
     Optional<Borrow> findByIdWithLock(@Param("id") Long id);
     
-    long countByStatus(String status);
+    long countByStatus(BorrowStatus status);
     
     @Query("SELECT COUNT(b) FROM Borrow b WHERE b.status = :status AND b.endTime < :now")
-    long countOverdue(@Param("status") String status, @Param("now") LocalDateTime now);
+    long countOverdue(@Param("status") BorrowStatus status, @Param("now") LocalDateTime now);
     
     Borrow findTopByEquipment_IdOrderByApplyDateDesc(Long equipmentId);
 
-    List<Borrow> findByEquipment_Lab_IdAndStatusIn(Long labId, List<String> statuses);
+    List<Borrow> findByEquipment_Lab_IdAndStatusIn(Long labId, List<BorrowStatus> statuses);
 
     Page<Borrow> findAll(Specification<Borrow> spec, Pageable pageable);
     
@@ -44,5 +46,5 @@ public interface BorrowRepository extends JpaRepository<Borrow, Long>, JpaSpecif
                                @Param("excludeId") Long excludeId);
 
     @Query("SELECT b FROM Borrow b WHERE b.status = :status AND b.endTime < :now ORDER BY b.endTime ASC")
-    List<Borrow> findOverdue(@Param("status") String status, @Param("now") LocalDateTime now);
+    List<Borrow> findOverdue(@Param("status") BorrowStatus status, @Param("now") LocalDateTime now);
 }

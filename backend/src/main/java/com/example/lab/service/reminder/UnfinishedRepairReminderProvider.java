@@ -4,6 +4,7 @@ import com.example.lab.dto.reminder.ReminderItem;
 import com.example.lab.dto.reminder.ReminderModule;
 import com.example.lab.dto.reminder.ReminderPriority;
 import com.example.lab.entity.Repair;
+import com.example.lab.enums.RepairStatus;
 import com.example.lab.repository.RepairRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -29,7 +30,7 @@ public class UnfinishedRepairReminderProvider implements ReminderProvider {
     @Override
     public ReminderModule buildModule() {
         LocalDateTime now = LocalDateTime.now();
-        List<Repair> unfinished = repairRepository.findByStatusNotOrderByReportDateDesc("FINISHED");
+        List<Repair> unfinished = repairRepository.findByStatusNotOrderByReportDateDesc(RepairStatus.FINISHED);
 
         ReminderModule module = new ReminderModule();
         module.setKey(getKey());
@@ -57,7 +58,7 @@ public class UnfinishedRepairReminderProvider implements ReminderProvider {
             item.setTitle(equipmentName);
 
             String reporterName = r.getReporter() != null ? r.getReporter().getName() : "未知";
-            String statusText = "REPORTED".equals(r.getStatus()) ? "待处理" : "维修中";
+            String statusText = r.getStatus() == RepairStatus.REPORTED ? "待处理" : "维修中";
             String pendingText;
             if (pendingDays > 0) {
                 pendingText = String.format("已等待 %d 天", pendingDays);
@@ -68,9 +69,9 @@ public class UnfinishedRepairReminderProvider implements ReminderProvider {
             item.setTime(r.getReportDate());
 
             ReminderPriority priority;
-            if ("REPORTED".equals(r.getStatus()) && (pendingDays >= 3 || pendingHours >= 48)) {
+            if (r.getStatus() == RepairStatus.REPORTED && (pendingDays >= 3 || pendingHours >= 48)) {
                 priority = ReminderPriority.HIGH;
-            } else if ("REPORTED".equals(r.getStatus()) || pendingDays >= 7) {
+            } else if (r.getStatus() == RepairStatus.REPORTED || pendingDays >= 7) {
                 priority = ReminderPriority.MEDIUM;
             } else {
                 priority = ReminderPriority.LOW;
@@ -87,7 +88,7 @@ public class UnfinishedRepairReminderProvider implements ReminderProvider {
             extra.put("equipmentId", r.getEquipment() != null ? r.getEquipment().getId() : null);
             extra.put("reporterId", r.getReporter() != null ? r.getReporter().getId() : null);
             extra.put("reporterName", reporterName);
-            extra.put("status", r.getStatus());
+            extra.put("status", r.getStatus() != null ? r.getStatus().getCode() : null);
             extra.put("statusText", statusText);
             extra.put("description", r.getDescription());
             extra.put("repairCompany", r.getRepairCompany());

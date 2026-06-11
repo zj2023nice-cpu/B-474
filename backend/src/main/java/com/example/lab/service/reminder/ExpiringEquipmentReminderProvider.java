@@ -4,6 +4,7 @@ import com.example.lab.dto.reminder.ReminderItem;
 import com.example.lab.dto.reminder.ReminderModule;
 import com.example.lab.dto.reminder.ReminderPriority;
 import com.example.lab.entity.Equipment;
+import com.example.lab.enums.EquipmentStatus;
 import com.example.lab.repository.EquipmentRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -33,7 +34,7 @@ public class ExpiringEquipmentReminderProvider implements ReminderProvider {
         LocalDate today = LocalDate.now();
         LocalDate futureDate = today.plusDays(30);
 
-        List<Equipment> activeEquipments = equipmentRepository.findByStatusNot("SCRAPPED");
+        List<Equipment> activeEquipments = equipmentRepository.findByStatusNot(EquipmentStatus.SCRAPPED);
 
         List<Equipment> expiringList = activeEquipments.stream()
                 .filter(e -> {
@@ -105,7 +106,7 @@ public class ExpiringEquipmentReminderProvider implements ReminderProvider {
             extra.put("code", e.getCode());
             extra.put("model", e.getModel());
             extra.put("manufacturer", e.getManufacturer());
-            extra.put("status", e.getStatus());
+            extra.put("status", e.getStatus() != null ? e.getStatus().getCode() : null);
             extra.put("labId", e.getLab() != null ? e.getLab().getId() : null);
             extra.put("labName", labName);
             extra.put("expiryDate", expiryDate.toString());

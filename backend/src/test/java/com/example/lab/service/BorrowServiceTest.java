@@ -4,6 +4,8 @@ import com.example.lab.constant.RoleConstant;
 import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.User;
+import com.example.lab.enums.BorrowStatus;
+import com.example.lab.enums.EquipmentStatus;
 import com.example.lab.exception.BusinessException;
 import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
@@ -63,14 +65,14 @@ class BorrowServiceTest {
         testEquipment = new Equipment();
         testEquipment.setId(1L);
         testEquipment.setName("显微镜");
-        testEquipment.setStatus("NORMAL");
+        testEquipment.setStatus(EquipmentStatus.NORMAL);
 
         testBorrow = new Borrow();
         testBorrow.setId(1L);
         testBorrow.setEquipment(testEquipment);
         testBorrow.setStartTime(LocalDateTime.now().plusDays(1));
         testBorrow.setEndTime(LocalDateTime.now().plusDays(2));
-        testBorrow.setStatus("PENDING");
+        testBorrow.setStatus(BorrowStatus.PENDING);
 
         testApprover = new User();
         testApprover.setId(2L);
@@ -121,7 +123,7 @@ class BorrowServiceTest {
 
         Borrow savedBorrow = new Borrow();
         savedBorrow.setId(1L);
-        savedBorrow.setStatus("PENDING");
+        savedBorrow.setStatus(BorrowStatus.PENDING);
         savedBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.save(any(Borrow.class))).thenAnswer(inv -> {
@@ -129,7 +131,7 @@ class BorrowServiceTest {
             assertEquals(currentUser, b.getApplicant(), "申请人应为当前登录用户，不能由前端指定");
             assertNotNull(b.getApplyDate(), "applyDate 应由服务端设置");
             assertNotEquals(LocalDateTime.now().minusDays(10), b.getApplyDate(), "applyDate 不能使用前端传值");
-            assertEquals("PENDING", b.getStatus(), "状态应由服务端设置为 PENDING");
+            assertEquals(BorrowStatus.PENDING, b.getStatus(), "状态应由服务端设置为 PENDING");
             assertNull(b.getApprover(), "审批人在申请时应为空");
             assertNull(b.getApproveTime(), "审批时间在申请时应为空");
             assertNull(b.getRejectReason(), "拒绝原因在申请时应为空");
@@ -142,7 +144,7 @@ class BorrowServiceTest {
         Borrow result = borrowService.apply(newBorrow);
 
         assertNotNull(result);
-        assertEquals("PENDING", result.getStatus());
+        assertEquals(BorrowStatus.PENDING, result.getStatus());
         verify(borrowRepository, times(2)).findConflicts(
                 eq(testEquipment.getId()),
                 any(LocalDateTime.class),
@@ -351,7 +353,7 @@ class BorrowServiceTest {
         User applicant = new User();
         applicant.setName("张三");
         conflictingBorrow.setApplicant(applicant);
-        conflictingBorrow.setStatus("APPROVED");
+        conflictingBorrow.setStatus(BorrowStatus.APPROVED);
         conflictingBorrow.setStartTime(LocalDateTime.now().plusDays(1));
         conflictingBorrow.setEndTime(LocalDateTime.now().plusDays(2));
 
@@ -390,7 +392,7 @@ class BorrowServiceTest {
         User applicant = new User();
         applicant.setName("李四");
         conflictingBorrow.setApplicant(applicant);
-        conflictingBorrow.setStatus("PENDING");
+        conflictingBorrow.setStatus(BorrowStatus.PENDING);
         conflictingBorrow.setStartTime(LocalDateTime.now().plusDays(3));
         conflictingBorrow.setEndTime(LocalDateTime.now().plusDays(4));
 
@@ -433,7 +435,7 @@ class BorrowServiceTest {
         Equipment borrowedEquipment = new Equipment();
         borrowedEquipment.setId(2L);
         borrowedEquipment.setName("已借出设备");
-        borrowedEquipment.setStatus("BORROWED");
+        borrowedEquipment.setStatus(EquipmentStatus.BORROWED);
         newBorrow.setEquipment(borrowedEquipment);
         newBorrow.setStartTime(LocalDateTime.now().plusDays(3));
         newBorrow.setEndTime(LocalDateTime.now().plusDays(4));
@@ -528,7 +530,7 @@ class BorrowServiceTest {
         User applicant = new User();
         applicant.setName("王五");
         conflictingBorrow.setApplicant(applicant);
-        conflictingBorrow.setStatus("APPROVED");
+        conflictingBorrow.setStatus(BorrowStatus.APPROVED);
         conflictingBorrow.setStartTime(startTime);
         conflictingBorrow.setEndTime(endTime);
 
@@ -545,7 +547,7 @@ class BorrowServiceTest {
         assertTrue(result.isHasConflict());
         assertEquals(1, result.getConflicts().size());
         assertEquals("王五", result.getConflicts().get(0).getApplicantName());
-        assertEquals("APPROVED", result.getConflicts().get(0).getStatus());
+        assertEquals(BorrowStatus.APPROVED, result.getConflicts().get(0).getStatus());
     }
 
     @Test
@@ -554,7 +556,7 @@ class BorrowServiceTest {
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
-        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
         pendingBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
@@ -564,7 +566,7 @@ class BorrowServiceTest {
         Borrow result = borrowService.approve(borrowId);
 
         assertNotNull(result);
-        assertEquals("APPROVED", result.getStatus());
+        assertEquals(BorrowStatus.APPROVED, result.getStatus());
         assertEquals(testApprover, result.getApprover());
         assertNotNull(result.getApproveTime());
         assertNull(result.getRejectReason());
@@ -582,7 +584,7 @@ class BorrowServiceTest {
 
         Borrow approvedBorrow = new Borrow();
         approvedBorrow.setId(borrowId);
-        approvedBorrow.setStatus("APPROVED");
+        approvedBorrow.setStatus(BorrowStatus.APPROVED);
         approvedBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
@@ -601,7 +603,7 @@ class BorrowServiceTest {
 
         Borrow rejectedBorrow = new Borrow();
         rejectedBorrow.setId(borrowId);
-        rejectedBorrow.setStatus("REJECTED");
+        rejectedBorrow.setStatus(BorrowStatus.REJECTED);
         rejectedBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(rejectedBorrow));
@@ -620,7 +622,7 @@ class BorrowServiceTest {
 
         Borrow returnedBorrow = new Borrow();
         returnedBorrow.setId(borrowId);
-        returnedBorrow.setStatus("RETURNED");
+        returnedBorrow.setStatus(BorrowStatus.RETURNED);
         returnedBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(returnedBorrow));
@@ -639,7 +641,7 @@ class BorrowServiceTest {
 
         Borrow cancelledBorrow = new Borrow();
         cancelledBorrow.setId(borrowId);
-        cancelledBorrow.setStatus("CANCELLED");
+        cancelledBorrow.setStatus(BorrowStatus.CANCELLED);
         cancelledBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(cancelledBorrow));
@@ -658,7 +660,7 @@ class BorrowServiceTest {
 
         Borrow alreadyApproved = new Borrow();
         alreadyApproved.setId(borrowId);
-        alreadyApproved.setStatus("PENDING");
+        alreadyApproved.setStatus(BorrowStatus.PENDING);
         alreadyApproved.setApprover(testApprover);
         alreadyApproved.setEquipment(testEquipment);
 
@@ -679,7 +681,7 @@ class BorrowServiceTest {
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
-        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
         pendingBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
@@ -689,7 +691,7 @@ class BorrowServiceTest {
         Borrow result = borrowService.reject(borrowId, rejectReason);
 
         assertNotNull(result);
-        assertEquals("REJECTED", result.getStatus());
+        assertEquals(BorrowStatus.REJECTED, result.getStatus());
         assertEquals(testApprover, result.getApprover());
         assertEquals("设备维护中", result.getRejectReason());
         assertNotNull(result.getRejectTime());
@@ -706,7 +708,7 @@ class BorrowServiceTest {
 
         Borrow rejectedBorrow = new Borrow();
         rejectedBorrow.setId(borrowId);
-        rejectedBorrow.setStatus("REJECTED");
+        rejectedBorrow.setStatus(BorrowStatus.REJECTED);
         rejectedBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(rejectedBorrow));
@@ -725,7 +727,7 @@ class BorrowServiceTest {
 
         Borrow approvedBorrow = new Borrow();
         approvedBorrow.setId(borrowId);
-        approvedBorrow.setStatus("APPROVED");
+        approvedBorrow.setStatus(BorrowStatus.APPROVED);
         approvedBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
@@ -744,7 +746,7 @@ class BorrowServiceTest {
 
         Borrow cancelledBorrow = new Borrow();
         cancelledBorrow.setId(borrowId);
-        cancelledBorrow.setStatus("CANCELLED");
+        cancelledBorrow.setStatus(BorrowStatus.CANCELLED);
         cancelledBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(cancelledBorrow));
@@ -763,7 +765,7 @@ class BorrowServiceTest {
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
-        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
         pendingBorrow.setEquipment(testEquipment);
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
@@ -780,7 +782,7 @@ class BorrowServiceTest {
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
-        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
         pendingBorrow.setEquipment(testEquipment);
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
@@ -797,7 +799,7 @@ class BorrowServiceTest {
 
         Borrow alreadyApproved = new Borrow();
         alreadyApproved.setId(borrowId);
-        alreadyApproved.setStatus("PENDING");
+        alreadyApproved.setStatus(BorrowStatus.PENDING);
         alreadyApproved.setApprover(testApprover);
         alreadyApproved.setEquipment(testEquipment);
 
@@ -817,11 +819,11 @@ class BorrowServiceTest {
 
         Equipment borrowedEquipment = new Equipment();
         borrowedEquipment.setId(1L);
-        borrowedEquipment.setStatus("BORROWED");
+        borrowedEquipment.setStatus(EquipmentStatus.BORROWED);
 
         Borrow approvedBorrow = new Borrow();
         approvedBorrow.setId(borrowId);
-        approvedBorrow.setStatus("APPROVED");
+        approvedBorrow.setStatus(BorrowStatus.APPROVED);
         approvedBorrow.setEquipment(borrowedEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
@@ -830,8 +832,8 @@ class BorrowServiceTest {
         Borrow result = borrowService.returnEquipment(borrowId);
 
         assertNotNull(result);
-        assertEquals("RETURNED", result.getStatus());
-        assertEquals("NORMAL", result.getEquipment().getStatus());
+        assertEquals(BorrowStatus.RETURNED, result.getStatus());
+        assertEquals(EquipmentStatus.NORMAL, result.getEquipment().getStatus());
 
         verify(borrowRepository).findByIdWithLock(borrowId);
         verify(equipmentRepository).save(borrowedEquipment);
@@ -844,7 +846,7 @@ class BorrowServiceTest {
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
-        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
         pendingBorrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
@@ -900,7 +902,7 @@ class BorrowServiceTest {
 
         Borrow borrow = new Borrow();
         borrow.setId(borrowId);
-        borrow.setStatus("PENDING");
+        borrow.setStatus(BorrowStatus.PENDING);
         borrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(borrow));
@@ -947,7 +949,7 @@ class BorrowServiceTest {
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
-        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
         pendingBorrow.setEquipment(testEquipment);
 
         BusinessException exception = assertThrows(BusinessException.class, () -> {
@@ -969,7 +971,7 @@ class BorrowServiceTest {
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
-        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
         pendingBorrow.setEquipment(testEquipment);
         pendingBorrow.setApplicant(applicant);
 
@@ -988,7 +990,7 @@ class BorrowServiceTest {
         Borrow result = borrowService.cancel(borrowId);
 
         assertNotNull(result);
-        assertEquals("CANCELLED", result.getStatus());
+        assertEquals(BorrowStatus.CANCELLED, result.getStatus());
         assertNotNull(result.getCancelTime());
         assertEquals("申请人", result.getCancelOperator());
 
@@ -1008,7 +1010,7 @@ class BorrowServiceTest {
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
-        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
         pendingBorrow.setEquipment(testEquipment);
         pendingBorrow.setApplicant(applicant);
 
@@ -1019,7 +1021,7 @@ class BorrowServiceTest {
         Borrow result = borrowService.cancel(borrowId);
 
         assertNotNull(result);
-        assertEquals("CANCELLED", result.getStatus());
+        assertEquals(BorrowStatus.CANCELLED, result.getStatus());
         assertNotNull(result.getCancelTime());
         assertEquals("管理员", result.getCancelOperator());
 
@@ -1038,7 +1040,7 @@ class BorrowServiceTest {
 
         Borrow pendingBorrow = new Borrow();
         pendingBorrow.setId(borrowId);
-        pendingBorrow.setStatus("PENDING");
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
         pendingBorrow.setEquipment(testEquipment);
         pendingBorrow.setApplicant(applicant);
 
@@ -1069,7 +1071,7 @@ class BorrowServiceTest {
 
         Borrow approvedBorrow = new Borrow();
         approvedBorrow.setId(borrowId);
-        approvedBorrow.setStatus("APPROVED");
+        approvedBorrow.setStatus(BorrowStatus.APPROVED);
         approvedBorrow.setEquipment(testEquipment);
         approvedBorrow.setApplicant(applicant);
 
@@ -1101,7 +1103,7 @@ class BorrowServiceTest {
 
         Borrow returnedBorrow = new Borrow();
         returnedBorrow.setId(borrowId);
-        returnedBorrow.setStatus("RETURNED");
+        returnedBorrow.setStatus(BorrowStatus.RETURNED);
         returnedBorrow.setEquipment(testEquipment);
         returnedBorrow.setApplicant(applicant);
 
@@ -1132,7 +1134,7 @@ class BorrowServiceTest {
 
         Borrow rejectedBorrow = new Borrow();
         rejectedBorrow.setId(borrowId);
-        rejectedBorrow.setStatus("REJECTED");
+        rejectedBorrow.setStatus(BorrowStatus.REJECTED);
         rejectedBorrow.setEquipment(testEquipment);
         rejectedBorrow.setApplicant(applicant);
 
@@ -1164,7 +1166,7 @@ class BorrowServiceTest {
 
         Borrow cancelledBorrow = new Borrow();
         cancelledBorrow.setId(borrowId);
-        cancelledBorrow.setStatus("CANCELLED");
+        cancelledBorrow.setStatus(BorrowStatus.CANCELLED);
         cancelledBorrow.setEquipment(testEquipment);
         cancelledBorrow.setApplicant(applicant);
 
@@ -1215,7 +1217,7 @@ class BorrowServiceTest {
 
         Borrow borrow = new Borrow();
         borrow.setId(borrowId);
-        borrow.setStatus("PENDING");
+        borrow.setStatus(BorrowStatus.PENDING);
         borrow.setEquipment(testEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(borrow));
@@ -1234,11 +1236,11 @@ class BorrowServiceTest {
 
         Equipment borrowedEquipment = new Equipment();
         borrowedEquipment.setId(1L);
-        borrowedEquipment.setStatus("BORROWED");
+        borrowedEquipment.setStatus(EquipmentStatus.BORROWED);
 
         Borrow approvedBorrow = new Borrow();
         approvedBorrow.setId(borrowId);
-        approvedBorrow.setStatus("APPROVED");
+        approvedBorrow.setStatus(BorrowStatus.APPROVED);
         approvedBorrow.setEquipment(borrowedEquipment);
 
         when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
@@ -1246,7 +1248,7 @@ class BorrowServiceTest {
 
         borrowService.delete(borrowId);
 
-        assertEquals("NORMAL", borrowedEquipment.getStatus());
+        assertEquals(EquipmentStatus.NORMAL, borrowedEquipment.getStatus());
         verify(equipmentRepository).save(borrowedEquipment);
         verify(borrowRepository).deleteById(borrowId);
     }
