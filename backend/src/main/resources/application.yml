@@ -2,9 +2,9 @@ spring:
   application:
     name: lab-equipment-system
   datasource:
-    url: jdbc:mysql://localhost:3307/lab_db?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf-8
-    username: root
-    password: 3434
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3307/lab_db?useSSL=false&serverTimezone=UTC&useUnicode=true&characterEncoding=utf-8}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:3434}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
@@ -21,4 +21,9 @@ spring:
       write-dates-as-timestamps: false
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:lab-equipment-management-system-secret-key-2024-secure}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}

@@ -9,9 +9,12 @@ class JwtUtilTest {
 
     private JwtUtil jwtUtil;
 
+    private static final String TEST_SECRET = "test-secret-key-for-unit-testing-purposes-only";
+    private static final long TEST_EXPIRATION_MS = 86400000L;
+
     @BeforeEach
     void setUp() {
-        jwtUtil = new JwtUtil();
+        jwtUtil = new JwtUtil(TEST_SECRET, TEST_EXPIRATION_MS);
     }
 
     @Test
