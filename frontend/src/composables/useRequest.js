@@ -24,7 +24,7 @@ export function useRequest(fetcher, options = {}) {
     try {
       const result = await fetcher(...args)
       data.value = result
-      if (onSuccess) onSuccess(result)
+      if (onSuccess) onSuccess(result, ...args)
       return result
     } catch (e) {
       error.value = e
@@ -34,7 +34,7 @@ export function useRequest(fetcher, options = {}) {
           ElMessage.error(msg)
         }
       }
-      if (onError) onError(e)
+      if (onError) onError(e, ...args)
       throw e
     } finally {
       loading.value = false
@@ -48,7 +48,7 @@ export function useRequest(fetcher, options = {}) {
     try {
       const result = await fetcher(...args)
       data.value = result
-      if (onSuccess) onSuccess(result)
+      if (onSuccess) onSuccess(result, ...args)
       return result
     } catch (e) {
       error.value = e
@@ -58,7 +58,7 @@ export function useRequest(fetcher, options = {}) {
           ElMessage.error(msg)
         }
       }
-      if (onError) onError(e)
+      if (onError) onError(e, ...args)
       throw e
     } finally {
       loading.value = false
@@ -102,7 +102,7 @@ export function useMutation(fetcher, options = {}) {
     try {
       const result = await fetcher(...args)
       if (successMessage) ElMessage.success(successMessage)
-      if (onSuccess) onSuccess(result)
+      if (onSuccess) onSuccess(result, ...args)
       return result
     } catch (e) {
       error.value = e
@@ -110,7 +110,7 @@ export function useMutation(fetcher, options = {}) {
       if (msg && !msg.includes('冲突记录')) {
         ElMessage.error(msg)
       }
-      if (onError) onError(e)
+      if (onError) onError(e, ...args)
       throw e
     } finally {
       loading.value = false

@@ -247,9 +247,9 @@ const addMutation = useMutation(
   {
     successMessage: '设备已添加',
     errorMessage: '添加失败',
-    onSuccess: () => {
+    onSuccess: (result) => {
       dialogVisible.value = false
-      listPage.fetch()
+      listPage.prependRow(result)
     }
   }
 )
@@ -259,8 +259,8 @@ const deleteMutation = useMutation(
   {
     successMessage: '已删除',
     errorMessage: '删除失败',
-    onSuccess: () => {
-      listPage.refresh()
+    onSuccess: (_, id) => {
+      listPage.removeRow(id)
     }
   }
 )
