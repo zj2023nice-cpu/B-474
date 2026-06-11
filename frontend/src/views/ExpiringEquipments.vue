@@ -117,6 +117,112 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import request from '../api/request'
 
+function parseDateParts(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return null
+  const trimmed = dateStr.trim()
+  const match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (!match) return null
+  const year = parseInt(match[1], 10)
+  const month = parseInt(match[2], 10)
+  const day = parseInt(match[3], 10)
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return null
+  if (month < 1 || month > 12 || day < 1) return null
+  const maxDay = daysInMonth(year, month)
+  if (day > maxDay) return null
+  return { year, month, day }
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+function formatDateParts(parts) {
+  if (!parts) return ''
+  return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`
+}
+
+function isLeapYear(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0)
+}
+
+function daysInMonth(year, month) {
+  return new Date(year, month, 0).getDate()
+}
+
+function addYears(parts, years) {
+  if (years == null || years <= 0) return null
+  const newYear = parts.year + years
+  let newDay = parts.day
+  if (parts.month === 2 && parts.day === 29 && !isLeapYear(newYear)) {
+    newDay = 28
+  }
+  return { year: newYear, month: parts.month, day: newDay }
+}
+
+function toEpochDay(year, month, day) {
+  const a = Math.floor((14 - month) / 12)
+  const y = year + 4800 - a
+  const m = month + 12 * a - 3
+  return day + Math.floor((153 * m + 2) / 5) + 365 * y
+    + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) - 32045
+}
+
+function daysBetweenDates(fromParts, toParts) {
+  return toEpochDay(toParts.year, toParts.month, toParts.day)
+    - toEpochDay(fromParts.year, fromParts.month, fromParts.day)
+}
+
+function getTodayLocal() {
+  const now = new Date()
+  return { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() }
+}
+
+function calcExpiryDateLocal(purchaseDateStr, lifeSpan) {
+  const parts = parseDateParts(purchaseDateStr)
+  if (!parts || lifeSpan == null || lifeSpan <= 0) return null
+  return addYears(parts, lifeSpan)
+}
+
+function calcRemainingDaysLocal(expiryDateStr) {
+  const expiryParts = parseDateParts(expiryDateStr)
+  if (!expiryParts) return null
+  const todayParts = getTodayLocal()
+  return daysBetweenDates(todayParts, expiryParts)
+}
+
+function enrichExpiryFields(item) {
+  const purchaseDate = item.purchaseDate
+  const lifeSpan = item.lifeSpan
+
+  if (!purchaseDate || lifeSpan == null || lifeSpan <= 0) {
+    item.dataComplete = false
+    const reasons = []
+    if (!purchaseDate) reasons.push('缺少采购日期')
+    if (lifeSpan == null || lifeSpan <= 0) reasons.push('缺少使用年限')
+    item.dataIncompleteReason = reasons.join('、')
+    item.expiryDate = ''
+    item.remainingDays = null
+    return
+  }
+
+  const expiryParts = calcExpiryDateLocal(purchaseDate, lifeSpan)
+  if (!expiryParts) {
+    item.dataComplete = false
+    item.dataIncompleteReason = '采购日期格式异常'
+    item.expiryDate = ''
+    item.remainingDays = null
+    return
+  }
+
+  const expiryStr = formatDateParts(expiryParts)
+  const remaining = calcRemainingDaysLocal(expiryStr)
+
+  item.expiryDate = expiryStr
+  item.remainingDays = remaining
+  item.dataComplete = true
+  item.dataIncompleteReason = null
+}
+
 const loading = ref(false)
 const labs = ref([])
 const incompleteCount = ref(0)
@@ -202,9 +308,12 @@ const fetchExpiringEquipments = async () => {
       params.status = searchForm.status
     }
     const response = await request.get('/equipments/expiring', { params })
+    if (response.content) {
+      response.content.forEach(enrichExpiryFields)
+    }
     pageData.value = response
     pagination.total = response.totalElements
-    incompleteCount.value = response.content.filter(e => !e.dataComplete).length
+    incompleteCount.value = (response.content || []).filter(e => !e.dataComplete).length
   } finally {
     loading.value = false
   }
