@@ -279,6 +279,7 @@ import {
 import { checkBorrowOperation } from '../api/stateConstraint'
 import { useRequest, useMutation } from '../composables/useRequest'
 import { useListPage } from '../composables/useListPage'
+import { useOperationCache } from '../composables/useOperationCache'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'ADMIN')
@@ -309,7 +310,51 @@ const approvalRecord = ref(null)
 const approvalDialogRef = ref(null)
 const currentActionId = ref(null)
 
-const borrowOperationCache = ref(new Map())
+const borrowOpCache = useOperationCache({
+  buildCacheKey: (borrow, operation) => `${borrow.id}_${operation}`,
+  checkOperation: (borrow, operation) => checkBorrowOperation(borrow.id, operation)
+})
+
+function getBorrowOperationAllowed(borrow, operation) {
+  const cached = borrowOpCache.getOrCheck(borrow, operation)
+  if (cached) return cached.allowed
+
+  if (operation === BusinessOperation.APPROVE_BORROW) {
+    return borrow.status === BorrowStatus.PENDING
+  }
+  if (operation === BusinessOperation.CANCEL_BORROW) {
+    return borrow.status === BorrowStatus.PENDING
+  }
+  if (operation === BusinessOperation.RETURN_EQUIPMENT) {
+    return borrow.status === BorrowStatus.APPROVED
+  }
+  return true
+}
+
+function getBorrowOperationDisabledReason(borrow, operation) {
+  const cached = borrowOpCache.getOrCheck(borrow, operation)
+  if (cached) return cached.errorMessage || '当前状态不允许此操作'
+
+  if (operation === BusinessOperation.APPROVE_BORROW && borrow.status !== BorrowStatus.PENDING) {
+    return '仅待审批状态的申请可以审批'
+  }
+  if (operation === BusinessOperation.CANCEL_BORROW && borrow.status !== BorrowStatus.PENDING) {
+    return '仅待审批状态的申请可以取消'
+  }
+  if (operation === BusinessOperation.RETURN_EQUIPMENT && borrow.status !== BorrowStatus.APPROVED) {
+    return '仅已批准状态的借用可以归还'
+  }
+  return '当前状态不允许此操作'
+}
+
+async function prefetchBorrowOperations(borrows) {
+  const operations = [
+    BusinessOperation.APPROVE_BORROW,
+    BusinessOperation.CANCEL_BORROW,
+    BusinessOperation.RETURN_EQUIPMENT
+  ]
+  await borrowOpCache.prefetch(borrows, operations)
+}
 
 const listPage = useListPage({
   apiPath: '/borrows',
@@ -330,7 +375,7 @@ const listPage = useListPage({
     if (content && content.length > 0 && canApply.value) {
       prefetchBorrowOperations(content)
     }
-    borrowOperationCache.value.clear()
+    borrowOpCache.clear()
   }
 })
 
@@ -361,7 +406,7 @@ const submitMutation = useMutation(
     errorMessage: '提交失败',
     onSuccess: () => {
       dialogVisible.value = false
-      borrowOperationCache.value.clear()
+      borrowOpCache.clear()
       listPage.fetch()
     }
   }
@@ -380,12 +425,9 @@ const approvalMutation = useMutation(
       ElMessage.success(action === 'approve' ? '已批准' : '已拒绝')
       approvalDialogRef.value?.handleSuccess()
       if (approvalRecord.value?.id != null && result) {
-        const idx = listPage.pageData.value.content.findIndex(item => item.id === approvalRecord.value.id)
-        if (idx !== -1) {
-          listPage.pageData.value.content.splice(idx, 1, result)
-        }
+        listPage.updateRow(approvalRecord.value.id, result)
       }
-      borrowOperationCache.value.clear()
+      borrowOpCache.clear()
       listPage.refresh()
     }
   }
@@ -397,11 +439,10 @@ const returnMutation = useMutation(
     successMessage: '已归还',
     errorMessage: '归还失败',
     onSuccess: (result, id) => {
-      const idx = listPage.pageData.value.content.findIndex(item => item.id === id)
-      if (idx !== -1 && result) {
-        listPage.pageData.value.content.splice(idx, 1, result)
+      if (result) {
+        listPage.updateRow(id, result)
       }
-      borrowOperationCache.value.clear()
+      borrowOpCache.clear()
       listPage.refresh()
     }
   }
@@ -413,72 +454,14 @@ const cancelMutation = useMutation(
     successMessage: '已取消',
     errorMessage: '取消失败',
     onSuccess: (result, id) => {
-      const idx = listPage.pageData.value.content.findIndex(item => item.id === id)
-      if (idx !== -1 && result) {
-        listPage.pageData.value.content.splice(idx, 1, result)
+      if (result) {
+        listPage.updateRow(id, result)
       }
-      borrowOperationCache.value.clear()
+      borrowOpCache.clear()
       listPage.refresh()
     }
   }
 )
-
-function getBorrowOperationAllowed(borrow, operation) {
-  const cacheKey = `${borrow.id}_${operation}`
-  if (borrowOperationCache.value.has(cacheKey)) {
-    return borrowOperationCache.value.get(cacheKey).allowed
-  }
-  if (operation === BusinessOperation.APPROVE_BORROW) {
-    return borrow.status === BorrowStatus.PENDING
-  }
-  if (operation === BusinessOperation.CANCEL_BORROW) {
-    return borrow.status === BorrowStatus.PENDING
-  }
-  if (operation === BusinessOperation.RETURN_EQUIPMENT) {
-    return borrow.status === BorrowStatus.APPROVED
-  }
-  return true
-}
-
-function getBorrowOperationDisabledReason(borrow, operation) {
-  const cacheKey = `${borrow.id}_${operation}`
-  if (borrowOperationCache.value.has(cacheKey)) {
-    const result = borrowOperationCache.value.get(cacheKey)
-    return result.errorMessage || '当前状态不允许此操作'
-  }
-  if (operation === BusinessOperation.APPROVE_BORROW && borrow.status !== BorrowStatus.PENDING) {
-    return '仅待审批状态的申请可以审批'
-  }
-  if (operation === BusinessOperation.CANCEL_BORROW && borrow.status !== BorrowStatus.PENDING) {
-    return '仅待审批状态的申请可以取消'
-  }
-  if (operation === BusinessOperation.RETURN_EQUIPMENT && borrow.status !== BorrowStatus.APPROVED) {
-    return '仅已批准状态的借用可以归还'
-  }
-  return '当前状态不允许此操作'
-}
-
-async function prefetchBorrowOperations(borrows) {
-  const operations = [
-    BusinessOperation.APPROVE_BORROW,
-    BusinessOperation.CANCEL_BORROW,
-    BusinessOperation.RETURN_EQUIPMENT
-  ]
-  
-  for (const borrow of borrows) {
-    for (const op of operations) {
-      const cacheKey = `${borrow.id}_${op}`
-      if (!borrowOperationCache.value.has(cacheKey)) {
-        try {
-          const result = await checkBorrowOperation(borrow.id, op)
-          borrowOperationCache.value.set(cacheKey, result)
-        } catch (e) {
-          console.warn(`Failed to check borrow operation ${op} for borrow ${borrow.id}:`, e)
-        }
-      }
-    }
-  }
-}
 
 const showApplyDialog = async () => {
   form.value = {}
@@ -578,7 +561,7 @@ const handleApprove = async (row) => {
   const checkResult = await checkBorrowOperation(row.id, BusinessOperation.APPROVE_BORROW)
   if (!checkResult.allowed) {
     ElMessage.warning(checkResult.errorMessage || '当前状态无法审批')
-    borrowOperationCache.value.set(`${row.id}_${BusinessOperation.APPROVE_BORROW}`, checkResult)
+    borrowOpCache.set(`${row.id}_${BusinessOperation.APPROVE_BORROW}`, checkResult)
     listPage.refresh()
     return
   }
@@ -594,7 +577,7 @@ const handleReject = async (row) => {
   const checkResult = await checkBorrowOperation(row.id, BusinessOperation.APPROVE_BORROW)
   if (!checkResult.allowed) {
     ElMessage.warning(checkResult.errorMessage || '当前状态无法审批')
-    borrowOperationCache.value.set(`${row.id}_${BusinessOperation.APPROVE_BORROW}`, checkResult)
+    borrowOpCache.set(`${row.id}_${BusinessOperation.APPROVE_BORROW}`, checkResult)
     listPage.refresh()
     return
   }
@@ -614,7 +597,7 @@ const handleApprovalConfirm = async ({ action, rejectReason }) => {
     await approvalMutation.mutate({ action, id, rejectReason })
   } catch (e) {
     approvalDialogRef.value?.handleError(e.message || '操作失败，请重试')
-    borrowOperationCache.value.clear()
+    borrowOpCache.clear()
     listPage.refresh()
   }
 }
@@ -625,7 +608,7 @@ const handleReturn = async (row) => {
   const checkResult = await checkBorrowOperation(row.id, BusinessOperation.RETURN_EQUIPMENT)
   if (!checkResult.allowed) {
     ElMessage.warning(checkResult.errorMessage || '当前状态无法归还')
-    borrowOperationCache.value.set(`${row.id}_${BusinessOperation.RETURN_EQUIPMENT}`, checkResult)
+    borrowOpCache.set(`${row.id}_${BusinessOperation.RETURN_EQUIPMENT}`, checkResult)
     listPage.refresh()
     return
   }
@@ -634,7 +617,7 @@ const handleReturn = async (row) => {
   try {
     await returnMutation.mutate(row.id)
   } catch (e) {
-    borrowOperationCache.value.clear()
+    borrowOpCache.clear()
     listPage.refresh()
   } finally {
     currentActionId.value = null
@@ -647,7 +630,7 @@ const handleCancel = (row) => {
   checkBorrowOperation(row.id, BusinessOperation.CANCEL_BORROW).then(checkResult => {
     if (!checkResult.allowed) {
       ElMessage.warning(checkResult.errorMessage || '当前状态无法取消')
-      borrowOperationCache.value.set(`${row.id}_${BusinessOperation.CANCEL_BORROW}`, checkResult)
+      borrowOpCache.set(`${row.id}_${BusinessOperation.CANCEL_BORROW}`, checkResult)
       listPage.refresh()
       return
     }

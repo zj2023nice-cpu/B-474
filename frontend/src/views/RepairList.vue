@@ -299,6 +299,7 @@ import {
 import { checkRepairOperation } from '../api/stateConstraint'
 import { useRequest, useMutation } from '../composables/useRequest'
 import { useListPage } from '../composables/useListPage'
+import { useOperationCache } from '../composables/useOperationCache'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'ADMIN')      
@@ -347,7 +348,46 @@ const finishFormRules = {
 const detailDialogVisible = ref(false)
 const currentActionId = ref(null)
 
-const repairOperationCache = ref(new Map())
+const repairOpCache = useOperationCache({
+  buildCacheKey: (repair, operation) => `${repair.id}_${operation}`,
+  checkOperation: (repair, operation) => checkRepairOperation(repair.id, operation)
+})
+
+function getRepairOperationAllowed(repair, operation) {
+  const cached = repairOpCache.getOrCheck(repair, operation)
+  if (cached) return cached.allowed
+
+  if (operation === BusinessOperation.FINISH_REPAIR) {
+    return repair.status === RepairStatus.REPORTED || repair.status === RepairStatus.IN_PROGRESS
+  }
+  if (operation === BusinessOperation.CANCEL_REPAIR) {
+    return repair.status === RepairStatus.REPORTED
+  }
+  return true
+}
+
+function getRepairOperationDisabledReason(repair, operation) {
+  const cached = repairOpCache.getOrCheck(repair, operation)
+  if (cached) return cached.errorMessage || '当前状态不允许此操作'
+
+  if (operation === BusinessOperation.FINISH_REPAIR && 
+      repair.status !== RepairStatus.REPORTED && 
+      repair.status !== RepairStatus.IN_PROGRESS) {
+    return '仅已上报或维修中状态的维修单可以完成'
+  }
+  if (operation === BusinessOperation.CANCEL_REPAIR && repair.status !== RepairStatus.REPORTED) {
+    return '仅已上报状态的维修单可以取消'
+  }
+  return '当前状态不允许此操作'
+}
+
+async function prefetchRepairOperations(repairs) {
+  const operations = [
+    BusinessOperation.FINISH_REPAIR,
+    BusinessOperation.CANCEL_REPAIR
+  ]
+  await repairOpCache.prefetch(repairs, operations)
+}
 
 const listPage = useListPage({
   apiPath: '/repairs',
@@ -368,7 +408,7 @@ const listPage = useListPage({
     if (content && content.length > 0 && canReport.value) {
       prefetchRepairOperations(content)
     }
-    repairOperationCache.value.clear()
+    repairOpCache.clear()
   }
 })
 
@@ -400,7 +440,7 @@ const reportMutation = useMutation(
     errorMessage: '报修失败',
     onSuccess: () => {
       reportDialogVisible.value = false
-      repairOperationCache.value.clear()
+      repairOpCache.clear()
       listPage.fetch()
     }
   }
@@ -412,12 +452,11 @@ const finishMutation = useMutation(
     successMessage: '维修已完成',
     errorMessage: '操作失败',
     onSuccess: (result, { id }) => {
-      const idx = listPage.pageData.value.content.findIndex(item => item.id === id)
-      if (idx !== -1 && result) {
-        listPage.pageData.value.content.splice(idx, 1, result)
+      if (result) {
+        listPage.updateRow(id, result)
       }
       finishDialogVisible.value = false
-      repairOperationCache.value.clear()
+      repairOpCache.clear()
       listPage.refresh()
     }
   }
@@ -429,7 +468,7 @@ const cancelMutation = useMutation(
     successMessage: '已取消',
     errorMessage: '取消失败',
     onSuccess: () => {
-      repairOperationCache.value.clear()
+      repairOpCache.clear()
       listPage.refresh()
     }
   }
@@ -441,63 +480,11 @@ const deleteMutation = useMutation(
     successMessage: '删除成功',
     errorMessage: '删除失败',
     onSuccess: () => {
-      repairOperationCache.value.clear()
+      repairOpCache.clear()
       listPage.refresh()
     }
   }
 )
-
-function getRepairOperationAllowed(repair, operation) {
-  const cacheKey = `${repair.id}_${operation}`
-  if (repairOperationCache.value.has(cacheKey)) {
-    return repairOperationCache.value.get(cacheKey).allowed
-  }
-  if (operation === BusinessOperation.FINISH_REPAIR) {
-    return repair.status === RepairStatus.REPORTED || repair.status === RepairStatus.IN_PROGRESS
-  }
-  if (operation === BusinessOperation.CANCEL_REPAIR) {
-    return repair.status === RepairStatus.REPORTED
-  }
-  return true
-}
-
-function getRepairOperationDisabledReason(repair, operation) {
-  const cacheKey = `${repair.id}_${operation}`
-  if (repairOperationCache.value.has(cacheKey)) {
-    const result = repairOperationCache.value.get(cacheKey)
-    return result.errorMessage || '当前状态不允许此操作'
-  }
-  if (operation === BusinessOperation.FINISH_REPAIR && 
-      repair.status !== RepairStatus.REPORTED && 
-      repair.status !== RepairStatus.IN_PROGRESS) {
-    return '仅已上报或维修中状态的维修单可以完成'
-  }
-  if (operation === BusinessOperation.CANCEL_REPAIR && repair.status !== RepairStatus.REPORTED) {
-    return '仅已上报状态的维修单可以取消'
-  }
-  return '当前状态不允许此操作'
-}
-
-async function prefetchRepairOperations(repairs) {
-  const operations = [
-    BusinessOperation.FINISH_REPAIR,
-    BusinessOperation.CANCEL_REPAIR
-  ]
-  
-  for (const repair of repairs) {
-    for (const op of operations) {
-      const cacheKey = `${repair.id}_${op}`
-      if (!repairOperationCache.value.has(cacheKey)) {
-        try {
-          const result = await checkRepairOperation(repair.id, op)
-          repairOperationCache.value.set(cacheKey, result)
-        } catch (e) {
-          console.warn(`Failed to check repair operation ${op} for repair ${repair.id}:`, e)
-        }
-      }
-    }
-  }
-}
 
 const onEquipmentChange = () => {
 }
@@ -551,7 +538,7 @@ const showFinishDialog = async (row) => {
   const checkResult = await checkRepairOperation(row.id, BusinessOperation.FINISH_REPAIR)
   if (!checkResult.allowed) {
     ElMessage.warning(checkResult.errorMessage || '当前状态无法完成维修')
-    repairOperationCache.value.set(`${row.id}_${BusinessOperation.FINISH_REPAIR}`, checkResult)
+    repairOpCache.set(`${row.id}_${BusinessOperation.FINISH_REPAIR}`, checkResult)
     listPage.refresh()
     return
   }
@@ -575,7 +562,7 @@ const handleFinishSubmit = async () => {
   const checkResult = await checkRepairOperation(finishForm.value.id, BusinessOperation.FINISH_REPAIR)
   if (!checkResult.allowed) {
     ElMessage.warning(checkResult.errorMessage || '当前状态无法完成维修')
-    repairOperationCache.value.set(`${finishForm.value.id}_${BusinessOperation.FINISH_REPAIR}`, checkResult)
+    repairOpCache.set(`${finishForm.value.id}_${BusinessOperation.FINISH_REPAIR}`, checkResult)
     listPage.refresh()
     finishDialogVisible.value = false
     return
@@ -615,7 +602,7 @@ const handleCancel = (row) => {
   checkRepairOperation(row.id, BusinessOperation.CANCEL_REPAIR).then(checkResult => {
     if (!checkResult.allowed) {
       ElMessage.warning(checkResult.errorMessage || '当前状态无法取消')
-      repairOperationCache.value.set(`${row.id}_${BusinessOperation.CANCEL_REPAIR}`, checkResult)
+      repairOpCache.set(`${row.id}_${BusinessOperation.CANCEL_REPAIR}`, checkResult)
       listPage.refresh()
       return
     }

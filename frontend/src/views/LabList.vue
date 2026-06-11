@@ -1,15 +1,15 @@
 <template>
   <div>
     <div class="header-actions">
-      <el-button v-if="canCreateLab" type="primary" @click="showAddDialog">新增实验室</el-button>
-      <el-input v-model="searchForm.name" placeholder="搜索名称" style="width: 150px; margin-left: 10px" clearable @clear="handleSearch" />
-      <el-input v-model="searchForm.building" placeholder="搜索楼宇" style="width: 150px; margin-left: 10px" clearable @clear="handleSearch" />
-      <el-input v-model="searchForm.picName" placeholder="搜索负责人" style="width: 150px; margin-left: 10px" clearable @clear="handleSearch" />
-      <el-button type="primary" style="margin-left: 10px" @click="handleSearch">搜索</el-button>
-      <el-button style="margin-left: 10px" @click="resetSearch">重置</el-button>
+      <el-button v-if="canCreateLab" type="primary" @click="showAddDialog" :loading="saveMutation.loading.value" :disabled="saveMutation.locked.value">新增实验室</el-button>
+      <el-input v-model="listPage.searchForm.name" placeholder="搜索名称" style="width: 150px; margin-left: 10px" clearable @clear="listPage.handleSearch" />
+      <el-input v-model="listPage.searchForm.building" placeholder="搜索楼宇" style="width: 150px; margin-left: 10px" clearable @clear="listPage.handleSearch" />
+      <el-input v-model="listPage.searchForm.picName" placeholder="搜索负责人" style="width: 150px; margin-left: 10px" clearable @clear="listPage.handleSearch" />
+      <el-button type="primary" style="margin-left: 10px" @click="listPage.handleSearch" :loading="listPage.loading.value">搜索</el-button>
+      <el-button style="margin-left: 10px" @click="listPage.resetSearch" :disabled="listPage.loading.value">重置</el-button>
     </div>
     
-    <el-table :data="pageData.content" style="width: 100%">
+    <el-table :data="listPage.pageData.content" style="width: 100%" v-loading="listPage.loading.value">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="name" label="名称" />
       <el-table-column prop="building" label="楼宇" />
@@ -21,20 +21,30 @@
         <template #default="scope">
           <el-button type="primary" size="small" @click="openDetail(scope.row)">详情</el-button>
           <el-button v-if="canEditLab" type="primary" size="small" @click="handleEdit(scope.row)">编辑</el-button>
-          <el-button v-if="canDeleteLab" type="danger" size="small" @click="handleDelete(scope.row)">删除</el-button>
+          <el-button
+            v-if="canDeleteLab"
+            type="danger"
+            size="small"
+            @click="handleDelete(scope.row)"
+            :loading="deleteMutation.loading.value && deleteRowId.value === scope.row.id"
+            :disabled="deleteMutation.locked.value"
+          >删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
+    <el-empty v-if="listPage.isEmpty.value" description="暂无实验室数据" />
+
     <div class="pagination-container">
       <el-pagination
-        v-model:current-page="pagination.currentPage"
-        v-model:page-size="pagination.pageSize"
+        v-model:current-page="listPage.pagination.currentPage"
+        v-model:page-size="listPage.pagination.pageSize"
         :page-sizes="[10, 20, 50, 100]"
-        :total="pagination.total"
+        :total="listPage.pagination.total"
         layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
+        @size-change="listPage.handleSizeChange"
+        @current-change="listPage.handleCurrentChange"
+        :disabled="listPage.loading.value"
       />
     </div>
 
@@ -70,12 +80,14 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import request from '../api/request'
 import { useUserStore } from '../stores/user'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import LabDetailDrawer from '../components/LabDetailDrawer.vue'
 import { PERMISSIONS } from '../constants/roleConstants'
+import { useListPage } from '../composables/useListPage'
+import { useMutation } from '../composables/useRequest'
 
 const userStore = useUserStore()
 const canCreateLab = computed(() => userStore.hasPermission(PERMISSIONS.LAB_CREATE))
@@ -87,76 +99,52 @@ const form = ref({})
 
 const drawerVisible = ref(false)
 const selectedLabId = ref(null)
+const deleteRowId = ref(null)
 
-const pageData = ref({
-  content: [],
-  totalPages: 0,
-  totalElements: 0,
-  currentPage: 1,
-  pageSize: 10,
-  hasNext: false,
-  hasPrevious: false
+const listPage = useListPage({
+  apiPath: '/labs',
+  initialSearchForm: {
+    name: '',
+    building: '',
+    picName: ''
+  }
 })
 
-const pagination = reactive({
-  currentPage: 1,
-  pageSize: 10,
-  total: 0
-})
+const saveMutation = useMutation(
+  (payload) => {
+    if (payload.id) {
+      return request.put(`/labs/${payload.id}`, payload)
+    }
+    return request.post('/labs', payload)
+  },
+  {
+    successMessage: '实验室已保存',
+    errorMessage: '保存失败',
+    onSuccess: (result, payload) => {
+      dialogVisible.value = false
+      if (payload.id) {
+        listPage.updateRow(payload.id, result)
+      } else {
+        listPage.refresh()
+      }
+    }
+  }
+)
 
-const searchForm = reactive({
-  name: '',
-  building: '',
-  picName: ''
-})
-
-const fetchLabs = async () => {
-  const params = {
-    page: pagination.currentPage,
-    size: pagination.pageSize
+const deleteMutation = useMutation(
+  (id) => request.delete(`/labs/${id}`),
+  {
+    successMessage: '已删除',
+    errorMessage: '删除失败',
+    onSuccess: (_, id) => {
+      listPage.removeRow(id)
+    }
   }
-  
-  if (searchForm.name) {
-    params.name = searchForm.name
-  }
-  if (searchForm.building) {
-    params.building = searchForm.building
-  }
-  if (searchForm.picName) {
-    params.picName = searchForm.picName
-  }
-  
-  const response = await request.get('/labs', { params })
-  pageData.value = response
-  pagination.total = response.totalElements
-}
+)
 
 const openDetail = (row) => {
   selectedLabId.value = row.id
   drawerVisible.value = true
-}
-
-const handleSearch = () => {
-  pagination.currentPage = 1
-  fetchLabs()
-}
-
-const resetSearch = () => {
-  searchForm.name = ''
-  searchForm.building = ''
-  searchForm.picName = ''
-  pagination.currentPage = 1
-  fetchLabs()
-}
-
-const handleSizeChange = (size) => {
-  pagination.pageSize = size
-  fetchLabs()
-}
-
-const handleCurrentChange = (page) => {
-  pagination.currentPage = page
-  fetchLabs()
 }
 
 const showAddDialog = () => {
@@ -170,15 +158,9 @@ const handleEdit = (row) => {
 }
 
 const handleSubmit = async () => {
-  if (form.value.id) {
-    await request.put(`/labs/${form.value.id}`, form.value)
-    ElMessage.success('实验室已更新')
-  } else {
-    await request.post('/labs', form.value)
-    ElMessage.success('实验室已添加')
-  }
-  dialogVisible.value = false
-  fetchLabs()
+  try {
+    await saveMutation.mutate(form.value)
+  } catch (e) {}
 }
 
 const handleDelete = (row) => {
@@ -187,13 +169,19 @@ const handleDelete = (row) => {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(async () => {
-    await request.delete(`/labs/${row.id}`)
-    fetchLabs()
-    ElMessage.success('已删除')
+    deleteRowId.value = row.id
+    try {
+      await deleteMutation.mutate(row.id)
+    } catch (e) {}
+    finally {
+      deleteRowId.value = null
+    }
+  }).catch(() => {
+    deleteRowId.value = null
   })
 }
 
-onMounted(fetchLabs)
+onMounted(() => {})
 </script>
 
 <style scoped>

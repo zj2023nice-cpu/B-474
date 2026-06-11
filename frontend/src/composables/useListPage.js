@@ -166,6 +166,56 @@ export function useListPage(config = {}) {
     return _doFetch()
   }
 
+  function _findRowIndex(id) {
+    const content = pageData.value.content || []
+    return content.findIndex(item => item.id === id)
+  }
+
+  function updateRow(id, newData) {
+    const idx = _findRowIndex(id)
+    if (idx === -1) return false
+    const content = pageData.value.content || []
+    const updated = typeof newData === 'function' ? newData(content[idx]) : newData
+    content.splice(idx, 1, updated)
+    return true
+  }
+
+  function removeRow(id) {
+    const idx = _findRowIndex(id)
+    if (idx === -1) return false
+    const content = pageData.value.content || []
+    content.splice(idx, 1)
+    if (pageData.value.totalElements > 0) {
+      pageData.value.totalElements -= 1
+    }
+    if (pagination.total > 0) {
+      pagination.total -= 1
+    }
+    return true
+  }
+
+  function prependRow(row) {
+    const content = pageData.value.content || []
+    content.unshift(row)
+    if (pageData.value.totalElements != null) {
+      pageData.value.totalElements += 1
+    }
+    if (pagination.total != null) {
+      pagination.total += 1
+    }
+  }
+
+  function appendRow(row) {
+    const content = pageData.value.content || []
+    content.push(row)
+    if (pageData.value.totalElements != null) {
+      pageData.value.totalElements += 1
+    }
+    if (pagination.total != null) {
+      pagination.total += 1
+    }
+  }
+
   if (autoFetch) {
     _doFetch()
   }
@@ -183,6 +233,10 @@ export function useListPage(config = {}) {
     handleSearch,
     resetSearch,
     handleSizeChange,
-    handleCurrentChange
+    handleCurrentChange,
+    updateRow,
+    removeRow,
+    prependRow,
+    appendRow
   }
 }
