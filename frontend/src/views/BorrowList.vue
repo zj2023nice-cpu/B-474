@@ -1,22 +1,22 @@
 <template>
   <div>
     <div class="header-actions">
-      <el-button v-if="canApply" type="primary" @click="showApplyDialog">申请借用</el-button>
+      <el-button v-if="canApply" type="primary" @click="showApplyDialog" :loading="applyEquipmentsReq.loading.value">申请借用</el-button>
       <el-alert v-if="isStudent" type="info" :closable="false" show-icon class="student-tip">
         <template #title>学生账号仅可查看借用记录，如需申请请联系教师</template>
       </el-alert>
-      <el-select v-model="searchForm.status" placeholder="状态筛选" style="width: 130px; margin-left: 10px" clearable @change="handleSearch">
+      <el-select v-model="listPage.searchForm.status" placeholder="状态筛选" style="width: 130px; margin-left: 10px" clearable @change="listPage.handleSearch">
         <el-option label="待审批" :value="BorrowStatus.PENDING" />
         <el-option label="已批准" :value="BorrowStatus.APPROVED" />
         <el-option label="已归还" :value="BorrowStatus.RETURNED" />
         <el-option label="已拒绝" :value="BorrowStatus.REJECTED" />
         <el-option label="已取消" :value="BorrowStatus.CANCELLED" />
       </el-select>
-      <el-button type="primary" style="margin-left: 10px" @click="handleSearch">搜索</el-button>
-      <el-button style="margin-left: 10px" @click="resetSearch">重置</el-button>
+      <el-button type="primary" style="margin-left: 10px" @click="listPage.handleSearch" :loading="listPage.loading.value">搜索</el-button>
+      <el-button style="margin-left: 10px" @click="listPage.resetSearch" :disabled="listPage.loading.value">重置</el-button>
     </div>
 
-    <el-table :data="pageData.content" style="width: 100%" v-loading="loading">
+    <el-table :data="listPage.pageData.content" style="width: 100%" v-loading="listPage.loading.value">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="equipment.name" label="设备" min-width="100">
         <template #default="scope">{{ scope.row.equipment?.name || '-' }}</template>
@@ -79,15 +79,15 @@
               <el-button 
                 type="success" 
                 size="small" 
-                :loading="approvalSubmitting" 
-                :disabled="approvalSubmitting"
+                :loading="approvalMutation.loading.value" 
+                :disabled="approvalMutation.locked.value"
                 @click="handleApprove(scope.row)"
               >批准</el-button>
               <el-button 
                 type="danger" 
                 size="small" 
-                :loading="approvalSubmitting" 
-                :disabled="approvalSubmitting"
+                :loading="approvalMutation.loading.value" 
+                :disabled="approvalMutation.locked.value"
                 @click="handleReject(scope.row)"
               >拒绝</el-button>
             </template>
@@ -108,8 +108,8 @@
               v-else
               type="warning" 
               size="small" 
-              :loading="cancelling && scope.row.id === currentActionId"
-              :disabled="cancelling"
+              :loading="cancelMutation.loading.value && currentActionId.value === scope.row.id"
+              :disabled="cancelMutation.locked.value"
               @click="handleCancel(scope.row)"
             >取消</el-button>
           </div>
@@ -129,8 +129,8 @@
               v-else
               type="primary" 
               size="small" 
-              :loading="returning && scope.row.id === currentActionId"
-              :disabled="returning"
+              :loading="returnMutation.loading.value && currentActionId.value === scope.row.id"
+              :disabled="returnMutation.locked.value"
               @click="handleReturn(scope.row)"
             >归还</el-button>
           </div>
@@ -138,22 +138,38 @@
       </el-table-column>
     </el-table>
 
+    <div v-if="listPage.hasError.value && !listPage.loading.value" class="error-wrapper">
+      <el-alert :title="listPage.error.value?.message || '加载失败，请稍后重试'" type="error" show-icon :closable="false">
+        <template #default>
+          <el-button type="primary" size="small" style="margin-top: 10px" @click="listPage.fetch">重试</el-button>
+        </template>
+      </el-alert>
+    </div>
+    <el-empty v-else-if="listPage.isEmpty.value" description="暂无借用记录" />
+
     <div class="pagination-container">
       <el-pagination
-        v-model:current-page="pagination.currentPage"
-        v-model:page-size="pagination.pageSize"
+        v-model:current-page="listPage.pagination.currentPage"
+        v-model:page-size="listPage.pagination.pageSize"
         :page-sizes="[10, 20, 50, 100]"
-        :total="pagination.total"
+        :total="listPage.pagination.total"
         layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
+        @size-change="listPage.handleSizeChange"
+        @current-change="listPage.handleCurrentChange"
+        :disabled="listPage.loading.value"
       />
     </div>
 
     <el-dialog v-model="dialogVisible" title="申请借用" width="600px">
       <el-form :model="form" label-width="100px">
         <el-form-item label="设备">
-          <el-select v-model="form.equipmentId" placeholder="选择设备" filterable @change="triggerConflictCheck">
+          <el-select
+            v-model="form.equipmentId"
+            placeholder="选择设备"
+            filterable
+            @change="triggerConflictCheck"
+            v-loading="applyEquipmentsReq.loading.value"
+          >
             <el-option
               v-for="eq in equipments"
               :key="eq.id"
@@ -223,11 +239,12 @@
       </div>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button @click="dialogVisible = false" :disabled="submitMutation.loading.value">取消</el-button>
         <el-button
           type="primary"
           @click="handleSubmit"
-          :disabled="conflictCheckLoading || (conflictCheckResult && conflictCheckResult.hasConflict) || !form.equipmentId"
+          :disabled="conflictCheckLoading || (conflictCheckResult && conflictCheckResult.hasConflict) || !form.equipmentId || submitMutation.locked.value"
+          :loading="submitMutation.loading.value"
         >
           提交
         </el-button>
@@ -239,7 +256,7 @@
       v-model="approvalDialogVisible"
       :action="approvalAction"
       :borrow-record="approvalRecord"
-      :submitting="approvalSubmitting"
+      :submitting="approvalMutation.loading.value"
       @confirm="handleApprovalConfirm"
     />
   </div>
@@ -260,6 +277,8 @@ import {
   getEquipmentDisabledReason
 } from '../constants/statusConstants'
 import { checkBorrowOperation } from '../api/stateConstraint'
+import { useRequest, useMutation } from '../composables/useRequest'
+import { useListPage } from '../composables/useListPage'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'ADMIN')
@@ -279,7 +298,6 @@ const equipments = ref([])
 const dialogVisible = ref(false)
 const form = ref({})
 const dateRange = ref([])
-const loading = ref(false)
 
 const conflictCheckLoading = ref(false)
 const conflictCheckResult = ref(null)
@@ -289,30 +307,121 @@ const approvalDialogVisible = ref(false)
 const approvalAction = ref('')
 const approvalRecord = ref(null)
 const approvalDialogRef = ref(null)
-const approvalSubmitting = ref(false)
 const currentActionId = ref(null)
 
 const borrowOperationCache = ref(new Map())
 
-const pageData = ref({
-  content: [],
-  totalPages: 0,
-  totalElements: 0,
-  currentPage: 1,
-  pageSize: 10,
-  hasNext: false,
-  hasPrevious: false
+const listPage = useListPage({
+  apiPath: '/borrows',
+  initialSearchForm: {
+    status: ''
+  },
+  buildParams: (sf) => {
+    const params = {}
+    if (isTeacher.value) {
+      params.userId = userStore.user.id
+    }
+    if (sf.status) {
+      params.status = sf.status
+    }
+    return params
+  },
+  onDataLoaded: (content) => {
+    if (content && content.length > 0 && canApply.value) {
+      prefetchBorrowOperations(content)
+    }
+    borrowOperationCache.value.clear()
+  }
 })
 
-const pagination = reactive({
-  currentPage: 1,
-  pageSize: 10,
-  total: 0
-})
+const applyEquipmentsReq = useRequest(
+  () => request.get('/equipments', { params: { page: 1, size: 1000 } }),
+  {
+    showErrorMessage: true,
+    errorMessage: '加载设备列表失败',
+    onSuccess: (data) => {
+      equipments.value = data.content || []
+    }
+  }
+)
 
-const searchForm = reactive({
-  status: ''
-})
+const conflictReq = useRequest(
+  (params) => request.get('/borrows/check-conflicts', { params }),
+  {
+    onSuccess: (result) => {
+      conflictCheckResult.value = result
+    }
+  }
+)
+
+const submitMutation = useMutation(
+  (payload) => request.post('/borrows', payload),
+  {
+    successMessage: '申请已提交',
+    errorMessage: '提交失败',
+    onSuccess: () => {
+      dialogVisible.value = false
+      borrowOperationCache.value.clear()
+      listPage.fetch()
+    }
+  }
+)
+
+const approvalMutation = useMutation(
+  ({ action, id, rejectReason }) => {
+    if (action === 'approve') {
+      return request.put(`/borrows/${id}/approve`)
+    }
+    return request.put(`/borrows/${id}/reject`, { rejectReason })
+  },
+  {
+    errorMessage: '操作失败',
+    onSuccess: (result, { action }) => {
+      ElMessage.success(action === 'approve' ? '已批准' : '已拒绝')
+      approvalDialogRef.value?.handleSuccess()
+      if (approvalRecord.value?.id != null && result) {
+        const idx = listPage.pageData.value.content.findIndex(item => item.id === approvalRecord.value.id)
+        if (idx !== -1) {
+          listPage.pageData.value.content.splice(idx, 1, result)
+        }
+      }
+      borrowOperationCache.value.clear()
+      listPage.refresh()
+    }
+  }
+)
+
+const returnMutation = useMutation(
+  (id) => request.put(`/borrows/${id}/return`),
+  {
+    successMessage: '已归还',
+    errorMessage: '归还失败',
+    onSuccess: (result, id) => {
+      const idx = listPage.pageData.value.content.findIndex(item => item.id === id)
+      if (idx !== -1 && result) {
+        listPage.pageData.value.content.splice(idx, 1, result)
+      }
+      borrowOperationCache.value.clear()
+      listPage.refresh()
+    }
+  }
+)
+
+const cancelMutation = useMutation(
+  (id) => request.put(`/borrows/${id}/cancel`),
+  {
+    successMessage: '已取消',
+    errorMessage: '取消失败',
+    onSuccess: (result, id) => {
+      const idx = listPage.pageData.value.content.findIndex(item => item.id === id)
+      if (idx !== -1 && result) {
+        listPage.pageData.value.content.splice(idx, 1, result)
+      }
+      borrowOperationCache.value.clear()
+      listPage.refresh()
+    }
+  }
+)
 
 function getBorrowOperationAllowed(borrow, operation) {
   const cacheKey = `${borrow.id}_${operation}`
@@ -371,99 +480,7 @@ async function prefetchBorrowOperations(borrows) {
   }
 }
 
-const fetchBorrows = async () => {
-  loading.value = true
-  try {
-    const params = {
-      page: pagination.currentPage,
-      size: pagination.pageSize
-    }
-
-    if (isTeacher.value) {
-      params.userId = userStore.user.id
-    }
-
-    if (searchForm.status) {
-      params.status = searchForm.status
-    }
-
-    const response = await request.get('/borrows', { params })
-    pageData.value = response
-    pagination.total = response.totalElements
-    
-    if (response.content && response.content.length > 0 && canApply.value) {
-      prefetchBorrowOperations(response.content)
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-const fetchBorrowsWithPageFallback = async () => {
-  let maxAttempts = 5
-  let attempts = 0
-
-  while (attempts < maxAttempts) {
-    attempts++
-    await fetchBorrows()
-
-    const currentContent = pageData.value.content
-    const totalPages = pageData.value.totalPages
-    const contentEmpty = !currentContent || currentContent.length === 0
-    const currentPage = pagination.currentPage
-
-    if (!contentEmpty) {
-      break
-    }
-
-    if (totalPages <= 0) {
-      if (currentPage !== 1) {
-        pagination.currentPage = 1
-      } else {
-        break
-      }
-    } else if (currentPage > totalPages) {
-      pagination.currentPage = totalPages
-    } else if (currentPage > 1) {
-      pagination.currentPage = currentPage - 1
-    } else {
-      break
-    }
-  }
-}
-
-const handleSearch = () => {
-  pagination.currentPage = 1
-  borrowOperationCache.value.clear()
-  fetchBorrows()
-}
-
-const resetSearch = () => {
-  searchForm.status = ''
-  pagination.currentPage = 1
-  borrowOperationCache.value.clear()
-  fetchBorrows()
-}
-
-const handleSizeChange = (size) => {
-  pagination.pageSize = size
-  pagination.currentPage = 1
-  borrowOperationCache.value.clear()
-  fetchBorrows()
-}
-
-const handleCurrentChange = (page) => {
-  pagination.currentPage = page
-  fetchBorrows()
-}
-
 const showApplyDialog = async () => {
-  const params = {
-    page: 1,
-    size: 1000
-  }
-  const response = await request.get('/equipments', { params })
-  equipments.value = response.content
   form.value = {}
   dateRange.value = []
   conflictCheckResult.value = null
@@ -473,6 +490,9 @@ const showApplyDialog = async () => {
     conflictCheckTimer = null
   }
   dialogVisible.value = true
+  try {
+    await applyEquipmentsReq.run()
+  } catch (e) {}
 }
 
 const triggerConflictCheck = () => {
@@ -490,17 +510,17 @@ const checkConflicts = async () => {
     return
   }
 
+  const params = {
+    equipmentId: form.value.equipmentId,
+    startTime: dateRange.value[0],
+    endTime: dateRange.value[1]
+  }
+
   conflictCheckLoading.value = true
   conflictCheckResult.value = null
 
   try {
-    const params = {
-      equipmentId: form.value.equipmentId,
-      startTime: dateRange.value[0],
-      endTime: dateRange.value[1]
-    }
-    const result = await request.get('/borrows/check-conflicts', { params })
-    conflictCheckResult.value = result
+    await conflictReq.run(params)
   } catch (e) {
     console.error('Conflict check failed:', e)
   } finally {
@@ -536,11 +556,7 @@ const handleSubmit = async () => {
   }
 
   try {
-    await request.post('/borrows', payload)
-    dialogVisible.value = false
-    borrowOperationCache.value.clear()
-    fetchBorrows()
-    ElMessage.success('申请已提交')
+    await submitMutation.mutate(payload)
   } catch (e) {
     if (e.message && e.message.includes('冲突记录')) {
       ElMessageBox.alert(
@@ -557,13 +573,13 @@ const handleSubmit = async () => {
 }
 
 const handleApprove = async (row) => {
-  if (approvalSubmitting.value) return
+  if (approvalMutation.locked.value) return
   
   const checkResult = await checkBorrowOperation(row.id, BusinessOperation.APPROVE_BORROW)
   if (!checkResult.allowed) {
     ElMessage.warning(checkResult.errorMessage || '当前状态无法审批')
     borrowOperationCache.value.set(`${row.id}_${BusinessOperation.APPROVE_BORROW}`, checkResult)
-    fetchBorrowsWithPageFallback()
+    listPage.refresh()
     return
   }
   
@@ -573,13 +589,13 @@ const handleApprove = async (row) => {
 }
 
 const handleReject = async (row) => {
-  if (approvalSubmitting.value) return
+  if (approvalMutation.locked.value) return
   
   const checkResult = await checkBorrowOperation(row.id, BusinessOperation.APPROVE_BORROW)
   if (!checkResult.allowed) {
     ElMessage.warning(checkResult.errorMessage || '当前状态无法审批')
     borrowOperationCache.value.set(`${row.id}_${BusinessOperation.APPROVE_BORROW}`, checkResult)
-    fetchBorrowsWithPageFallback()
+    listPage.refresh()
     return
   }
   
@@ -589,86 +605,50 @@ const handleReject = async (row) => {
 }
 
 const handleApprovalConfirm = async ({ action, rejectReason }) => {
-  if (approvalSubmitting.value) return
+  if (approvalMutation.locked.value) return
 
   const id = approvalRecord.value?.id
   if (!id) return
 
-  approvalSubmitting.value = true
-
   try {
-    let result
-    if (action === 'approve') {
-      result = await request.put(`/borrows/${id}/approve`)
-    } else {
-      result = await request.put(`/borrows/${id}/reject`, { rejectReason })
-    }
-
-    approvalDialogRef.value?.handleSuccess()
-
-    const idx = pageData.value.content.findIndex(item => item.id === id)
-    if (idx !== -1 && result) {
-      pageData.value.content.splice(idx, 1, result)
-    }
-
-    borrowOperationCache.value.clear()
-    await fetchBorrowsWithPageFallback()
-
-    ElMessage.success(action === 'approve' ? '已批准' : '已拒绝')
+    await approvalMutation.mutate({ action, id, rejectReason })
   } catch (e) {
     approvalDialogRef.value?.handleError(e.message || '操作失败，请重试')
     borrowOperationCache.value.clear()
-    fetchBorrowsWithPageFallback()
-  } finally {
-    approvalSubmitting.value = false
+    listPage.refresh()
   }
 }
 
-const returning = ref(false)
-
 const handleReturn = async (row) => {
-  if (returning.value) return
+  if (returnMutation.locked.value) return
   
   const checkResult = await checkBorrowOperation(row.id, BusinessOperation.RETURN_EQUIPMENT)
   if (!checkResult.allowed) {
     ElMessage.warning(checkResult.errorMessage || '当前状态无法归还')
     borrowOperationCache.value.set(`${row.id}_${BusinessOperation.RETURN_EQUIPMENT}`, checkResult)
-    fetchBorrowsWithPageFallback()
+    listPage.refresh()
     return
   }
 
   currentActionId.value = row.id
-  returning.value = true
   try {
-    const result = await request.put(`/borrows/${row.id}/return`)
-
-    const idx = pageData.value.content.findIndex(item => item.id === row.id)
-    if (idx !== -1 && result) {
-      pageData.value.content.splice(idx, 1, result)
-    }
-
-    borrowOperationCache.value.clear()
-    await fetchBorrowsWithPageFallback()
-    ElMessage.success('已归还')
+    await returnMutation.mutate(row.id)
   } catch (e) {
     borrowOperationCache.value.clear()
-    fetchBorrowsWithPageFallback()
+    listPage.refresh()
   } finally {
-    returning.value = false
     currentActionId.value = null
   }
 }
 
-const cancelling = ref(false)
-
 const handleCancel = (row) => {
-  if (cancelling.value) return
+  if (cancelMutation.locked.value) return
   
   checkBorrowOperation(row.id, BusinessOperation.CANCEL_BORROW).then(checkResult => {
     if (!checkResult.allowed) {
       ElMessage.warning(checkResult.errorMessage || '当前状态无法取消')
       borrowOperationCache.value.set(`${row.id}_${BusinessOperation.CANCEL_BORROW}`, checkResult)
-      fetchBorrowsWithPageFallback()
+      listPage.refresh()
       return
     }
 
@@ -678,30 +658,18 @@ const handleCancel = (row) => {
       type: 'warning'
     }).then(async () => {
       currentActionId.value = row.id
-      cancelling.value = true
       try {
-        const result = await request.put(`/borrows/${row.id}/cancel`)
-
-        const idx = pageData.value.content.findIndex(item => item.id === row.id)
-        if (idx !== -1 && result) {
-          pageData.value.content.splice(idx, 1, result)
-        }
-
-        borrowOperationCache.value.clear()
-        await fetchBorrowsWithPageFallback()
-        ElMessage.success('已取消')
+        await cancelMutation.mutate(row.id)
       } finally {
-        cancelling.value = false
         currentActionId.value = null
       }
     }).catch(() => {
-      cancelling.value = false
       currentActionId.value = null
     })
   })
 }
 
-onMounted(fetchBorrows)
+onMounted(() => {})
 </script>
 
 <style scoped>
@@ -762,5 +730,9 @@ onMounted(fetchBorrows)
   color: #606266;
   font-family: 'Courier New', monospace;
   font-size: 12px;
+}
+
+.error-wrapper {
+  margin-top: 20px;
 }
 </style>

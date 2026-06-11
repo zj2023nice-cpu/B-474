@@ -1,23 +1,29 @@
 <template>
   <div>
     <div class="header-actions">
-      <el-button v-if="isAdmin" type="primary" @click="showAddDialog">新增设备</el-button>
-      <el-input v-model="searchForm.name" placeholder="搜索名称" style="width: 150px; margin-left: 10px" clearable @clear="handleSearch" />
-      <el-input v-model="searchForm.code" placeholder="搜索编号" style="width: 150px; margin-left: 10px" clearable @clear="handleSearch" />
-      <el-select v-model="searchForm.status" placeholder="状态筛选" style="width: 120px; margin-left: 10px" clearable @clear="handleSearch">
+      <el-button v-if="isAdmin" type="primary" @click="showAddDialog" :loading="addMutation.loading.value" :disabled="addMutation.locked.value">新增设备</el-button>
+      <el-input v-model="listPage.searchForm.name" placeholder="搜索名称" style="width: 150px; margin-left: 10px" clearable @clear="listPage.handleSearch" />
+      <el-input v-model="listPage.searchForm.code" placeholder="搜索编号" style="width: 150px; margin-left: 10px" clearable @clear="listPage.handleSearch" />
+      <el-select v-model="listPage.searchForm.status" placeholder="状态筛选" style="width: 120px; margin-left: 10px" clearable @clear="listPage.handleSearch">
         <el-option label="正常" value="NORMAL" />
         <el-option label="借用中" value="BORROWED" />
         <el-option label="维修中" value="REPAIRING" />
         <el-option label="报废" value="SCRAPPED" />
       </el-select>
-      <el-select v-model="searchForm.labId" placeholder="实验室筛选" style="width: 150px; margin-left: 10px" clearable @clear="handleSearch">
+      <el-select v-model="listPage.searchForm.labId" placeholder="实验室筛选" style="width: 150px; margin-left: 10px" clearable @clear="listPage.handleSearch">
         <el-option v-for="lab in labs" :key="lab.id" :label="lab.name" :value="lab.id" />
       </el-select>
-      <el-button type="primary" style="margin-left: 10px" @click="handleSearch">搜索</el-button>
-      <el-button style="margin-left: 10px" @click="resetSearch">重置</el-button>
+      <el-button type="primary" style="margin-left: 10px" @click="listPage.handleSearch" :loading="listPage.loading.value">搜索</el-button>
+      <el-button style="margin-left: 10px" @click="listPage.resetSearch" :disabled="listPage.loading.value">重置</el-button>
     </div>
 
-    <el-table :data="pageData.content" style="width: 100%" @row-click="handleRowClick" highlight-current-row>
+    <el-table
+      :data="listPage.pageData.content"
+      style="width: 100%"
+      @row-click="handleRowClick"
+      highlight-current-row
+      v-loading="listPage.loading.value"
+    >
       <el-table-column prop="code" label="编号" width="120" />
       <el-table-column prop="name" label="名称" />
       <el-table-column prop="model" label="型号" />
@@ -31,20 +37,37 @@
       <el-table-column label="操作">
         <template #default="scope">
           <el-button type="primary" size="small" @click.stop="openDetail(scope.row)">详情</el-button>
-          <el-button v-if="isAdmin" type="danger" size="small" @click.stop="handleDelete(scope.row)">删除</el-button>
+          <el-button
+            v-if="isAdmin"
+            type="danger"
+            size="small"
+            @click.stop="handleDelete(scope.row)"
+            :loading="deleteMutation.loading.value && deleteRowId.value === scope.row.id"
+            :disabled="deleteMutation.locked.value"
+          >删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
+    <div v-if="listPage.hasError.value && !listPage.loading.value" class="error-wrapper">
+      <el-alert :title="listPage.error.value?.message || '加载失败，请稍后重试'" type="error" show-icon :closable="false">
+        <template #default>
+          <el-button type="primary" size="small" style="margin-top: 10px" @click="listPage.fetch">重试</el-button>
+        </template>
+      </el-alert>
+    </div>
+    <el-empty v-else-if="listPage.isEmpty.value" description="暂无设备数据" />
+
     <div class="pagination-container">
       <el-pagination
-        v-model:current-page="pagination.currentPage"
-        v-model:page-size="pagination.pageSize"
+        v-model:current-page="listPage.pagination.currentPage"
+        v-model:page-size="listPage.pagination.pageSize"
         :page-sizes="[10, 20, 50, 100]"
-        :total="pagination.total"
+        :total="listPage.pagination.total"
         layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
+        @size-change="listPage.handleSizeChange"
+        @current-change="listPage.handleCurrentChange"
+        :disabled="listPage.loading.value"
       />
     </div>
 
@@ -75,14 +98,21 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <el-button @click="dialogVisible = false" :disabled="addMutation.loading.value">取消</el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="addMutation.loading.value" :disabled="addMutation.locked.value">确定</el-button>
       </template>
     </el-dialog>
 
     <el-drawer v-model="drawerVisible" title="设备详情" size="480px" :destroy-on-close="true">
-      <div v-loading="detailLoading">
-        <template v-if="detailData">
+      <div v-loading="detailReq.loading.value">
+        <template v-if="detailReq.error.value">
+          <el-alert :title="detailReq.error.value?.message || '加载详情失败'" type="error" show-icon :closable="false">
+            <template #default>
+              <el-button type="primary" size="small" style="margin-top: 10px" @click="reloadDetail">重试</el-button>
+            </template>
+          </el-alert>
+        </template>
+        <template v-else-if="detailData">
           <el-descriptions :column="1" border>
             <el-descriptions-item label="编号">{{ detailData.code }}</el-descriptions-item>
             <el-descriptions-item label="名称">{{ detailData.name }}</el-descriptions-item>
@@ -160,10 +190,12 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import request from '../api/request'
 import { useUserStore } from '../stores/user'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElMessage } from 'element-plus'
+import { useRequest, useMutation } from '../composables/useRequest'
+import { useListPage } from '../composables/useListPage'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'ADMIN')
@@ -172,31 +204,64 @@ const labs = ref([])
 const dialogVisible = ref(false)
 const form = ref({})
 const drawerVisible = ref(false)
-const detailLoading = ref(false)
+const deleteRowId = ref(null)
+const lastDetailId = ref(null)
+
+const listPage = useListPage({
+  apiPath: '/equipments',
+  initialSearchForm: {
+    name: '',
+    code: '',
+    status: '',
+    labId: null
+  }
+})
+
+const labsReq = useRequest(
+  () => request.get('/labs', { params: { page: 1, size: 1000 } }),
+  {
+    showErrorMessage: true,
+    errorMessage: '实验室数据加载失败',
+    onSuccess: (data) => {
+      labs.value = data.content || []
+    }
+  }
+)
+
+const detailReq = useRequest(
+  (id) => request.get(`/equipments/${id}/detail`),
+  {
+    showErrorMessage: false,
+    onSuccess: (data) => {
+      detailData.value = data
+    }
+  }
+)
+
 const detailData = ref(null)
 
-const pageData = ref({
-  content: [],
-  totalPages: 0,
-  totalElements: 0,
-  currentPage: 1,
-  pageSize: 10,
-  hasNext: false,
-  hasPrevious: false
-})
+const addMutation = useMutation(
+  (payload) => request.post('/equipments', payload),
+  {
+    successMessage: '设备已添加',
+    errorMessage: '添加失败',
+    onSuccess: () => {
+      dialogVisible.value = false
+      listPage.fetch()
+    }
+  }
+)
 
-const pagination = reactive({
-  currentPage: 1,
-  pageSize: 10,
-  total: 0
-})
-
-const searchForm = reactive({
-  name: '',
-  code: '',
-  status: '',
-  labId: null
-})
+const deleteMutation = useMutation(
+  (id) => request.delete(`/equipments/${id}`),
+  {
+    successMessage: '已删除',
+    errorMessage: '删除失败',
+    onSuccess: () => {
+      listPage.refresh()
+    }
+  }
+)
 
 const getStatusType = (status) => {
   if (status === 'NORMAL') return 'success'
@@ -213,63 +278,6 @@ const getStatusText = (status) => {
   return status
 }
 
-const fetchEquipments = async () => {
-  const params = {
-    page: pagination.currentPage,
-    size: pagination.pageSize
-  }
-  
-  if (searchForm.name) {
-    params.name = searchForm.name
-  }
-  if (searchForm.code) {
-    params.code = searchForm.code
-  }
-  if (searchForm.status) {
-    params.status = searchForm.status
-  }
-  if (searchForm.labId) {
-    params.labId = searchForm.labId
-  }
-  
-  const response = await request.get('/equipments', { params })
-  pageData.value = response
-  pagination.total = response.totalElements
-}
-
-const fetchLabs = async () => {
-  const params = {
-    page: 1,
-    size: 1000
-  }
-  const response = await request.get('/labs', { params })
-  labs.value = response.content
-}
-
-const handleSearch = () => {
-  pagination.currentPage = 1
-  fetchEquipments()
-}
-
-const resetSearch = () => {
-  searchForm.name = ''
-  searchForm.code = ''
-  searchForm.status = ''
-  searchForm.labId = null
-  pagination.currentPage = 1
-  fetchEquipments()
-}
-
-const handleSizeChange = (size) => {
-  pagination.pageSize = size
-  fetchEquipments()
-}
-
-const handleCurrentChange = (page) => {
-  pagination.currentPage = page
-  fetchEquipments()
-}
-
 const showAddDialog = () => {
   form.value = { price: 0, lifeSpan: 5 }
   dialogVisible.value = true
@@ -280,31 +288,39 @@ const handleSubmit = async () => {
     ...form.value,
     lab: { id: form.value.labId }
   }
-  await request.post('/equipments', payload)
-  dialogVisible.value = false
-  fetchEquipments()
-  ElMessage.success('设备已添加')
+  try {
+    await addMutation.mutate(payload)
+  } catch (e) {}
 }
 
 const handleDelete = (row) => {
-  ElMessageBox.confirm('确认删除？', '警告', { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' }).then(async () => {
-    await request.delete(`/equipments/${row.id}`)
-    fetchEquipments()
-    ElMessage.success('已删除')
-  })
+  ElMessageBox.confirm('确认删除？', '警告', { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' })
+    .then(async () => {
+      deleteRowId.value = row.id
+      try {
+        await deleteMutation.mutate(row.id)
+      } catch (e) {}
+      finally {
+        deleteRowId.value = null
+      }
+    })
+    .catch(() => {})
 }
 
 const openDetail = async (row) => {
   drawerVisible.value = true
-  detailLoading.value = true
   detailData.value = null
+  lastDetailId.value = row.id
   try {
-    const response = await request.get(`/equipments/${row.id}/detail`)
-    detailData.value = response
-  } catch (e) {
-    // handled in request.js
-  } finally {
-    detailLoading.value = false
+    await detailReq.run(row.id)
+  } catch (e) {}
+}
+
+const reloadDetail = async () => {
+  if (lastDetailId.value) {
+    try {
+      await detailReq.run(lastDetailId.value)
+    } catch (e) {}
   }
 }
 
@@ -344,8 +360,7 @@ const getRepairStatusText = (status) => {
 }
 
 onMounted(() => {
-  fetchLabs()
-  fetchEquipments()
+  labsReq.run()
 })
 </script>
 
@@ -361,6 +376,10 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+.error-wrapper {
+  margin-top: 20px;
 }
 
 :deep(.el-drawer__body) {
