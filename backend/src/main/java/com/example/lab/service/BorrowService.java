@@ -45,6 +45,21 @@ public class BorrowService {
     private UserRepository userRepository;
 
     public ConflictCheckResult checkConflicts(Long equipmentId, LocalDateTime startTime, LocalDateTime endTime, Long excludeBorrowId) {
+        if (equipmentId == null) {
+            throw new BusinessException("请选择要检查的设备");
+        }
+        if (startTime == null) {
+            throw new BusinessException("请选择开始时间");
+        }
+        if (endTime == null) {
+            throw new BusinessException("请选择结束时间");
+        }
+        if (endTime.isBefore(startTime)) {
+            throw new BusinessException("结束时间不能早于开始时间");
+        }
+        if (endTime.isEqual(startTime)) {
+            throw new BusinessException("结束时间必须晚于开始时间");
+        }
         List<Borrow> conflicts = findConflictsInternal(equipmentId, startTime, endTime, excludeBorrowId);
         ConflictCheckResult result = new ConflictCheckResult();
         result.setHasConflict(!conflicts.isEmpty());
@@ -112,9 +127,48 @@ public class BorrowService {
         }
     }
 
+    private void validateBorrowApplication(Borrow borrow) {
+        LocalDateTime now = LocalDateTime.now();
+
+        if (borrow.getEquipment() == null || borrow.getEquipment().getId() == null) {
+            throw new BusinessException("请选择要借用的设备");
+        }
+
+        if (borrow.getStartTime() == null) {
+            throw new BusinessException("请选择借用开始时间");
+        }
+
+        if (borrow.getEndTime() == null) {
+            throw new BusinessException("请选择借用结束时间");
+        }
+
+        if (borrow.getEndTime().isBefore(borrow.getStartTime())) {
+            throw new BusinessException("结束时间不能早于开始时间");
+        }
+
+        if (borrow.getEndTime().isEqual(borrow.getStartTime())) {
+            throw new BusinessException("结束时间必须晚于开始时间");
+        }
+
+        if (borrow.getStartTime().isBefore(now)) {
+            throw new BusinessException("开始时间不能早于当前时间");
+        }
+
+        if (borrow.getPurpose() != null && borrow.getPurpose().length() > 500) {
+            throw new BusinessException("用途说明长度不能超过 500 个字符");
+        }
+    }
+
     @Transactional
     public Borrow apply(Borrow borrow) {
         checkCanApplyOrManage();
+
+        validateBorrowApplication(borrow);
+
+        Long currentUserId = getCurrentUserId();
+        User applicant = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new BusinessException(404, "当前用户不存在"));
+
         ConflictCheckResult preCheckResult = checkConflicts(
                 borrow.getEquipment().getId(),
                 borrow.getStartTime(),
@@ -144,6 +198,13 @@ public class BorrowService {
 
         borrow.setStatus(STATUS_PENDING);
         borrow.setApplyDate(LocalDateTime.now());
+        borrow.setApplicant(applicant);
+        borrow.setApprover(null);
+        borrow.setApproveTime(null);
+        borrow.setRejectReason(null);
+        borrow.setRejectTime(null);
+        borrow.setCancelTime(null);
+        borrow.setCancelOperator(null);
         return borrowRepository.save(borrow);
     }
 

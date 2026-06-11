@@ -2,9 +2,6 @@ package com.example.lab.entity;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import lombok.Data;
 import java.time.LocalDateTime;
 
@@ -19,41 +16,43 @@ public class Borrow {
     @Version
     private Long version;
 
-    @ManyToOne
-    @JoinColumn(name = "equipment_id")
-    @NotNull(message = "设备不能为空")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "equipment_id", nullable = false)
     private Equipment equipment;
 
-    @ManyToOne
-    @JoinColumn(name = "applicant_id")
-    @NotNull(message = "申请人不能为空")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "applicant_id", nullable = false)
     private User applicant;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @Column(nullable = false)
     private LocalDateTime applyDate;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @Column(nullable = false)
     private LocalDateTime startTime;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @Column(nullable = false)
     private LocalDateTime endTime;
 
-    @Size(max = 500, message = "用途说明长度不能超过 500 个字符")
+    @Column(length = 500)
     private String purpose;
-    
-    @Pattern(regexp = "^(PENDING|APPROVED|RETURNED|REJECTED|CANCELLED)$", message = "状态必须是 PENDING、APPROVED、RETURNED、REJECTED 或 CANCELLED")
-    private String status; // PENDING, APPROVED, RETURNED, REJECTED, CANCELLED
+
+    @Column(length = 20, nullable = false)
+    private String status;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime cancelTime;
 
-    private String cancelOperator; // 取消操作人姓名
+    @Column(length = 50)
+    private String cancelOperator;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "approver_id")
     private User approver;
 
-    @Size(max = 500, message = "拒绝原因长度不能超过 500 个字符")
+    @Column(length = 500)
     private String rejectReason;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
