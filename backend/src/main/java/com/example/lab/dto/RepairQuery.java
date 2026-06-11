@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 public class RepairQuery {
     private Integer page = 1;
     private Integer size = 10;
+    private Long userId;
     private Long equipmentId;
     private String status;
     private LocalDateTime reportDateStart;
@@ -30,6 +31,14 @@ public class RepairQuery {
         if (size != null && size > 0 && size <= 100) {
             this.size = size;
         }
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
     }
 
     public Long getEquipmentId() {

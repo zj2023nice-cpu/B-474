@@ -152,6 +152,11 @@ public class RepairService {
         return (root, criteriaQuery, criteriaBuilder) -> {
             Specification<Repair> spec = Specification.where(null);
             
+            if (query.getUserId() != null) {
+                spec = spec.and((r, q, cb) ->
+                    cb.equal(r.get("reporter").get("id"), query.getUserId()));
+            }
+            
             if (query.getEquipmentId() != null) {
                 spec = spec.and((r, q, cb) -> 
                     cb.equal(r.get("equipment").get("id"), query.getEquipmentId()));

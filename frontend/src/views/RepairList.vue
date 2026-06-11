@@ -413,6 +413,10 @@ const fetchRepairs = async () => {
       size: pagination.pageSize
     }
 
+    if (isTeacher.value) {
+      params.userId = userStore.user.id
+    }
+
     if (searchForm.status) {
       params.status = searchForm.status
     }
