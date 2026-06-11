@@ -9,11 +9,13 @@ import com.example.lab.enums.EquipmentStatus;
 import com.example.lab.exception.BusinessException;
 import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
+import com.example.lab.repository.RepairRepository;
 import com.example.lab.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -33,6 +35,7 @@ import java.util.Collection;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,6 +49,12 @@ class BorrowServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private RepairRepository repairRepository;
+
+    @Mock
+    private StateConstraintService stateConstraintService;
 
     @Mock
     private Authentication authentication;
@@ -86,6 +95,13 @@ class BorrowServiceTest {
         lenient().when(authentication.getPrincipal()).thenReturn(2L);
         lenient().when(authentication.getAuthorities()).thenAnswer(inv -> authorities);
         SecurityContextHolder.setContext(securityContext);
+
+        lenient().doNothing().when(stateConstraintService).assertOperationAllowed(any(), any(Equipment.class));
+        lenient().doNothing().when(stateConstraintService).assertOperationAllowed(any(), anyLong());
+        lenient().doNothing().when(stateConstraintService).assertBorrowOperationAllowed(any(), any(Borrow.class));
+        lenient().doNothing().when(stateConstraintService).assertBorrowOperationAllowed(any(), anyLong());
+        lenient().doNothing().when(stateConstraintService).assertWithLock(any(), anyLong());
+        lenient().when(repairRepository.hasActiveRepairsByEquipment(anyLong())).thenReturn(false);
     }
 
     @AfterEach
@@ -1251,5 +1267,235 @@ class BorrowServiceTest {
         assertEquals(EquipmentStatus.NORMAL, borrowedEquipment.getStatus());
         verify(equipmentRepository).save(borrowedEquipment);
         verify(borrowRepository).deleteById(borrowId);
+    }
+
+    // ==================== 审批阶段：精确状态断言 ====================
+
+    @Test
+    void testApprove_EquipmentStatusMustBecomeBORROWED_ProtectsAgainstMissingStatusUpdate() {
+        Long borrowId = 1L;
+
+        Equipment normalEquipment = new Equipment();
+        normalEquipment.setId(1L);
+        normalEquipment.setStatus(EquipmentStatus.NORMAL);
+
+        Borrow pendingBorrow = new Borrow();
+        pendingBorrow.setId(borrowId);
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
+        pendingBorrow.setEquipment(normalEquipment);
+        pendingBorrow.setStartTime(LocalDateTime.now().plusDays(1));
+        pendingBorrow.setEndTime(LocalDateTime.now().plusDays(2));
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(testApprover));
+        when(equipmentRepository.findByIdWithLock(normalEquipment.getId())).thenReturn(Optional.of(normalEquipment));
+        when(borrowRepository.findConflicts(
+                eq(normalEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(borrowId)
+        )).thenReturn(Collections.emptyList());
+        when(borrowRepository.save(pendingBorrow)).thenReturn(pendingBorrow);
+
+        borrowService.approve(borrowId);
+
+        ArgumentCaptor<Equipment> equipmentCaptor = ArgumentCaptor.forClass(Equipment.class);
+        verify(equipmentRepository).save(equipmentCaptor.capture());
+        Equipment savedEquipment = equipmentCaptor.getValue();
+        assertEquals(EquipmentStatus.BORROWED, savedEquipment.getStatus(),
+                "审批通过后设备状态必须精确变为 BORROWED，防回归：有人忘记调用 equipment.setStatus(BORROWED)");
+        assertSame(normalEquipment, savedEquipment,
+                "必须是被锁定的那台设备对象被保存，防回归：save 了错误的 equipment 引用");
+    }
+
+    // ==================== 归还阶段：与维修状态联动 ====================
+
+    @Test
+    void testReturnEquipment_WithActiveRepairs_ShouldKeepREPAIRINGStatus_ProtectsAgainstBlindResetToNORMAL() {
+        Long borrowId = 1L;
+
+        Equipment borrowedEquipment = new Equipment();
+        borrowedEquipment.setId(1L);
+        borrowedEquipment.setStatus(EquipmentStatus.BORROWED);
+
+        Borrow approvedBorrow = new Borrow();
+        approvedBorrow.setId(borrowId);
+        approvedBorrow.setStatus(BorrowStatus.APPROVED);
+        approvedBorrow.setEquipment(borrowedEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
+        when(equipmentRepository.findByIdWithLock(borrowedEquipment.getId())).thenReturn(Optional.of(borrowedEquipment));
+        when(repairRepository.hasActiveRepairsByEquipment(borrowedEquipment.getId())).thenReturn(true);
+        when(borrowRepository.save(approvedBorrow)).thenReturn(approvedBorrow);
+
+        borrowService.returnEquipment(borrowId);
+
+        assertEquals(EquipmentStatus.BORROWED, borrowedEquipment.getStatus(),
+                "归还时存在未完成维修，设备状态不应被改动，防回归：hasActiveRepairs 判断被跳过导致直接重置为 NORMAL");
+
+        ArgumentCaptor<Equipment> equipmentCaptor = ArgumentCaptor.forClass(Equipment.class);
+        verify(equipmentRepository).save(equipmentCaptor.capture());
+        assertEquals(EquipmentStatus.BORROWED, equipmentCaptor.getValue().getStatus(),
+                "持久化的设备状态也必须保持 BORROWED（后续由维修完成流程接管）");
+    }
+
+    @Test
+    void testReturnEquipment_NoActiveRepairs_ShouldResetToNORMAL_WithExactStatusCheck() {
+        Long borrowId = 1L;
+
+        Equipment borrowedEquipment = new Equipment();
+        borrowedEquipment.setId(1L);
+        borrowedEquipment.setStatus(EquipmentStatus.BORROWED);
+
+        Borrow approvedBorrow = new Borrow();
+        approvedBorrow.setId(borrowId);
+        approvedBorrow.setStatus(BorrowStatus.APPROVED);
+        approvedBorrow.setEquipment(borrowedEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
+        when(equipmentRepository.findByIdWithLock(borrowedEquipment.getId())).thenReturn(Optional.of(borrowedEquipment));
+        when(repairRepository.hasActiveRepairsByEquipment(borrowedEquipment.getId())).thenReturn(false);
+        when(borrowRepository.save(approvedBorrow)).thenReturn(approvedBorrow);
+
+        Borrow result = borrowService.returnEquipment(borrowId);
+
+        assertEquals(BorrowStatus.RETURNED, result.getStatus(),
+                "借用单状态必须变为 RETURNED");
+
+        ArgumentCaptor<Equipment> equipmentCaptor = ArgumentCaptor.forClass(Equipment.class);
+        verify(equipmentRepository).save(equipmentCaptor.capture());
+        assertEquals(EquipmentStatus.NORMAL, equipmentCaptor.getValue().getStatus(),
+                "无活动维修时归还，设备状态必须精确恢复为 NORMAL");
+    }
+
+    // ==================== 取消阶段：与维修状态联动 ====================
+
+    @Test
+    void testCancel_ApprovedBorrowedEquipmentWithActiveRepairs_ShouldNotResetToNORMAL() {
+        Long borrowId = 1L;
+
+        Equipment borrowedEquipment = new Equipment();
+        borrowedEquipment.setId(1L);
+        borrowedEquipment.setStatus(EquipmentStatus.BORROWED);
+
+        User applicant = new User();
+        applicant.setId(2L);
+        applicant.setName("管理员");
+
+        Borrow approvedBorrow = new Borrow();
+        approvedBorrow.setId(borrowId);
+        approvedBorrow.setStatus(BorrowStatus.APPROVED);
+        approvedBorrow.setEquipment(borrowedEquipment);
+        approvedBorrow.setApplicant(applicant);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(testApprover));
+        when(equipmentRepository.findByIdWithLock(borrowedEquipment.getId())).thenReturn(Optional.of(borrowedEquipment));
+        when(repairRepository.hasActiveRepairsByEquipment(borrowedEquipment.getId())).thenReturn(true);
+        when(borrowRepository.save(approvedBorrow)).thenReturn(approvedBorrow);
+
+        borrowService.cancel(borrowId);
+
+        ArgumentCaptor<Equipment> equipmentCaptor = ArgumentCaptor.forClass(Equipment.class);
+        verify(equipmentRepository).save(equipmentCaptor.capture());
+        assertEquals(EquipmentStatus.BORROWED, equipmentCaptor.getValue().getStatus(),
+                "取消 BORROWED 借用但存在活动维修时，设备状态不得重置为 NORMAL，防回归：状态无条件覆盖");
+    }
+
+    // ==================== 删除阶段：与维修状态联动 ====================
+
+    @Test
+    void testDelete_BorrowedEquipmentWithActiveRepairs_ShouldKeepBORROWEDStatus() {
+        Long borrowId = 1L;
+
+        Equipment borrowedEquipment = new Equipment();
+        borrowedEquipment.setId(1L);
+        borrowedEquipment.setStatus(EquipmentStatus.BORROWED);
+
+        Borrow approvedBorrow = new Borrow();
+        approvedBorrow.setId(borrowId);
+        approvedBorrow.setStatus(BorrowStatus.APPROVED);
+        approvedBorrow.setEquipment(borrowedEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(approvedBorrow));
+        when(equipmentRepository.findByIdWithLock(borrowedEquipment.getId())).thenReturn(Optional.of(borrowedEquipment));
+        when(repairRepository.hasActiveRepairsByEquipment(borrowedEquipment.getId())).thenReturn(true);
+        doNothing().when(borrowRepository).deleteById(borrowId);
+
+        borrowService.delete(borrowId);
+
+        ArgumentCaptor<Equipment> equipmentCaptor = ArgumentCaptor.forClass(Equipment.class);
+        verify(equipmentRepository).save(equipmentCaptor.capture());
+        assertEquals(EquipmentStatus.BORROWED, equipmentCaptor.getValue().getStatus(),
+                "删除 BORROWED 借用但存在活动维修时，设备状态必须保持原值，防回归：delete 不判断活动维修就 NORMAL");
+        verify(borrowRepository).deleteById(borrowId);
+    }
+
+    // ==================== 审批冲突：防重复审批 ====================
+
+    @Test
+    void testApprove_ConcurrentConflictDuringApproval_ShouldBeRejected_ProtectsAgainstRaceCondition() {
+        Long borrowId = 1L;
+        Long otherBorrowId = 99L;
+
+        Equipment normalEquipment = new Equipment();
+        normalEquipment.setId(1L);
+        normalEquipment.setStatus(EquipmentStatus.NORMAL);
+
+        Borrow pendingBorrow = new Borrow();
+        pendingBorrow.setId(borrowId);
+        pendingBorrow.setStatus(BorrowStatus.PENDING);
+        pendingBorrow.setEquipment(normalEquipment);
+        pendingBorrow.setStartTime(LocalDateTime.now().plusDays(1));
+        pendingBorrow.setEndTime(LocalDateTime.now().plusDays(3));
+
+        Borrow conflictingApproved = new Borrow();
+        conflictingApproved.setId(otherBorrowId);
+        conflictingApproved.setStatus(BorrowStatus.APPROVED);
+        User otherApplicant = new User();
+        otherApplicant.setName("抢先审批的用户");
+        conflictingApproved.setApplicant(otherApplicant);
+        conflictingApproved.setStartTime(LocalDateTime.now().plusDays(1));
+        conflictingApproved.setEndTime(LocalDateTime.now().plusDays(3));
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(pendingBorrow));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(testApprover));
+        when(equipmentRepository.findByIdWithLock(normalEquipment.getId())).thenReturn(Optional.of(normalEquipment));
+        when(borrowRepository.findConflicts(
+                eq(normalEquipment.getId()),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                eq(borrowId)
+        )).thenReturn(Arrays.asList(conflictingApproved));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.approve(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("冲突记录"),
+                "审批阶段发现与已批准借用冲突时必须拒绝，防回归：审批时跳过 findConflicts 检查");
+
+        verify(equipmentRepository, never()).save(any(Equipment.class));
+        verify(borrowRepository, never()).save(pendingBorrow);
+    }
+
+    // ==================== 重复审批保护：已审批人非空 ====================
+
+    @Test
+    void testApprove_PendingButAlreadyHasApprover_ShouldBeRejected_ProtectsAgainstDoubleApproval() {
+        Long borrowId = 1L;
+
+        Borrow alreadyTouched = new Borrow();
+        alreadyTouched.setId(borrowId);
+        alreadyTouched.setStatus(BorrowStatus.PENDING);
+        alreadyTouched.setApprover(testApprover);
+        alreadyTouched.setEquipment(testEquipment);
+
+        when(borrowRepository.findByIdWithLock(borrowId)).thenReturn(Optional.of(alreadyTouched));
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> {
+            borrowService.approve(borrowId);
+        });
+        assertTrue(exception.getMessage().contains("已被审批"),
+                "approver 字段非空的借用单即使状态仍为 PENDING 也不允许再审批，防回归：approver 判空被移除");
     }
 }
