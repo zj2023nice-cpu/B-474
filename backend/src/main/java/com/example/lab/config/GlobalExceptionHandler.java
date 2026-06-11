@@ -6,6 +6,7 @@ import com.example.lab.exception.BusinessException;
 import com.example.lab.exception.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -128,5 +129,39 @@ public class GlobalExceptionHandler {
                 "服务器内部错误: 服务器处理请求时发生错误"
         );
         return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    /**
+     * 数据完整性异常兜底（唯一约束、外键、非空等）。
+     * <p>EquipmentService 的重试循环会吞掉 code 列的重复键冲突并重试，
+     * 只有重试耗尽、或其他字段 / 其他实体触发的 DIVE 才会走到这里。</p>
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolationException(
+            DataIntegrityViolationException ex, WebRequest request) {
+        String msg = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+        String userMsg;
+
+        if (msg.contains("duplicate") || msg.contains("unique")) {
+            if (msg.contains("code")) {
+                logger.error("设备编号唯一约束冲突（重试已耗尽）: ", ex);
+                userMsg = "服务器繁忙，设备编号生成冲突多次，请稍后再试";
+            } else {
+                logger.error("数据唯一约束冲突: ", ex);
+                userMsg = "数据重复：您提交的信息与现有记录冲突，请检查后重试";
+            }
+        } else if (msg.contains("foreign") || msg.contains("fk_") || msg.contains("references")) {
+            logger.warn("外键约束冲突: {}", ex.getMessage());
+            userMsg = "关联数据不存在：相关记录已被删除或尚未创建";
+        } else if (msg.contains("not null") || msg.contains("non-null")) {
+            logger.warn("非空约束冲突: {}", ex.getMessage());
+            userMsg = "必填字段缺失：请补充完整后再提交";
+        } else {
+            logger.error("数据完整性异常: ", ex);
+            userMsg = "数据保存失败：数据格式不正确，请检查后重试";
+        }
+
+        ApiResponse<Void> response = ApiResponse.error(HttpStatus.CONFLICT.value(), userMsg);
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
     }
 }

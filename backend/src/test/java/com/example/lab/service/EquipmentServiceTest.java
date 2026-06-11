@@ -4,14 +4,17 @@ import com.example.lab.dto.ExpiringEquipmentDTO;
 import com.example.lab.dto.ExpiringQuery;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Lab;
+import com.example.lab.exception.BusinessException;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.LabRepository;
+import com.example.lab.util.EquipmentCodeGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 
 import java.math.BigDecimal;
@@ -24,6 +27,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +38,12 @@ class EquipmentServiceTest {
 
     @Mock
     private LabRepository labRepository;
+
+    @Mock
+    private EquipmentCodeGenerator codeGenerator;
+
+    @Mock
+    private EquipmentPersistenceHelper persistenceHelper;
 
     @InjectMocks
     private EquipmentService equipmentService;
@@ -70,8 +80,8 @@ class EquipmentServiceTest {
         newEquipment.setLab(lab);
 
         when(labRepository.findById(1L)).thenReturn(Optional.of(testLab));
-        when(equipmentRepository.findByLab_Id(1L)).thenReturn(Collections.emptyList());
-        
+        when(codeGenerator.generateNextCode(1L)).thenReturn("LAB01-001");
+
         Equipment savedEquipment = new Equipment();
         savedEquipment.setId(2L);
         savedEquipment.setCode("LAB01-001");
@@ -79,7 +89,8 @@ class EquipmentServiceTest {
         savedEquipment.setStatus("NORMAL");
         savedEquipment.setLab(testLab);
 
-        when(equipmentRepository.save(any(Equipment.class))).thenReturn(savedEquipment);
+        when(persistenceHelper.saveInNewTransaction(any(Equipment.class), eq(testLab), eq("LAB01-001")))
+                .thenReturn(savedEquipment);
 
         Equipment result = equipmentService.addEquipment(newEquipment);
 
@@ -89,8 +100,9 @@ class EquipmentServiceTest {
         assertEquals(testLab, result.getLab());
 
         verify(labRepository).findById(1L);
-        verify(equipmentRepository).findByLab_Id(1L);
-        verify(equipmentRepository).save(any(Equipment.class));
+        verify(codeGenerator).generateNextCode(1L);
+        verify(persistenceHelper).saveInNewTransaction(any(Equipment.class), eq(testLab), eq("LAB01-001"));
+        verifyNoMoreInteractions(codeGenerator);
     }
 
     @Test
@@ -103,11 +115,8 @@ class EquipmentServiceTest {
         newEquipment.setLab(lab);
 
         when(labRepository.findById(1L)).thenReturn(Optional.of(testLab));
-        
-        Equipment existing1 = new Equipment();
-        Equipment existing2 = new Equipment();
-        when(equipmentRepository.findByLab_Id(1L)).thenReturn(Arrays.asList(existing1, existing2));
-        
+        when(codeGenerator.generateNextCode(1L)).thenReturn("LAB01-003");
+
         Equipment savedEquipment = new Equipment();
         savedEquipment.setId(3L);
         savedEquipment.setCode("LAB01-003");
@@ -115,14 +124,110 @@ class EquipmentServiceTest {
         savedEquipment.setStatus("NORMAL");
         savedEquipment.setLab(testLab);
 
-        when(equipmentRepository.save(any(Equipment.class))).thenReturn(savedEquipment);
+        when(persistenceHelper.saveInNewTransaction(any(Equipment.class), eq(testLab), eq("LAB01-003")))
+                .thenReturn(savedEquipment);
 
         Equipment result = equipmentService.addEquipment(newEquipment);
 
         assertNotNull(result);
         assertEquals("LAB01-003", result.getCode());
 
-        verify(equipmentRepository).findByLab_Id(1L);
+        verify(codeGenerator).generateNextCode(1L);
+    }
+
+    @Test
+    void testAddEquipment_OnFirstCodeConflict_ShouldRetryOnce() {
+        Lab lab = new Lab();
+        lab.setId(1L);
+
+        Equipment newEquipment = new Equipment();
+        newEquipment.setName("新设备");
+        newEquipment.setLab(lab);
+
+        when(labRepository.findById(1L)).thenReturn(Optional.of(testLab));
+        when(codeGenerator.generateNextCode(1L))
+                .thenReturn("LAB01-003")
+                .thenReturn("LAB01-004");
+
+        Equipment savedEquipment = new Equipment();
+        savedEquipment.setId(3L);
+        savedEquipment.setCode("LAB01-004");
+        savedEquipment.setName("新设备");
+        savedEquipment.setStatus("NORMAL");
+        savedEquipment.setLab(testLab);
+
+        DataIntegrityViolationException conflict = new DataIntegrityViolationException(
+                "Duplicate entry 'LAB01-003' for key 'equipments.code'");
+
+        when(persistenceHelper.saveInNewTransaction(any(Equipment.class), eq(testLab), eq("LAB01-003")))
+                .thenThrow(conflict);
+        when(persistenceHelper.saveInNewTransaction(any(Equipment.class), eq(testLab), eq("LAB01-004")))
+                .thenReturn(savedEquipment);
+
+        Equipment result = equipmentService.addEquipment(newEquipment);
+
+        assertNotNull(result);
+        assertEquals("LAB01-004", result.getCode(), "第一次冲突后重试应拿到新的更大编号");
+
+        verify(codeGenerator, times(2)).generateNextCode(1L);
+        verify(persistenceHelper).saveInNewTransaction(any(Equipment.class), eq(testLab), eq("LAB01-003"));
+        verify(persistenceHelper).saveInNewTransaction(any(Equipment.class), eq(testLab), eq("LAB01-004"));
+    }
+
+    @Test
+    void testAddEquipment_AllRetriesExhausted_ShouldThrowBusinessException() {
+        Lab lab = new Lab();
+        lab.setId(1L);
+
+        Equipment newEquipment = new Equipment();
+        newEquipment.setName("新设备");
+        newEquipment.setLab(lab);
+
+        when(labRepository.findById(1L)).thenReturn(Optional.of(testLab));
+
+        when(codeGenerator.generateNextCode(1L))
+                .thenReturn("LAB01-003", "LAB01-004", "LAB01-005", "LAB01-006", "LAB01-007");
+
+        DataIntegrityViolationException conflict = new DataIntegrityViolationException(
+                "duplicate key value violates unique constraint \"uk_code\" - column code");
+        when(persistenceHelper.saveInNewTransaction(any(Equipment.class), eq(testLab), any()))
+                .thenThrow(conflict);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> equipmentService.addEquipment(newEquipment));
+
+        assertTrue(ex.getMessage().contains("冲突多次"), "重试耗尽应抛出明确业务异常");
+        assertTrue(ex.getMessage().contains(String.valueOf(EquipmentCodeGenerator.MAX_RETRY)));
+
+        verify(codeGenerator, times(EquipmentCodeGenerator.MAX_RETRY)).generateNextCode(1L);
+        verify(persistenceHelper, times(EquipmentCodeGenerator.MAX_RETRY))
+                .saveInNewTransaction(any(Equipment.class), eq(testLab), any());
+    }
+
+    @Test
+    void testAddEquipment_NonCodeDIVE_ShouldNotRetryAndRethrow() {
+        Lab lab = new Lab();
+        lab.setId(1L);
+
+        Equipment newEquipment = new Equipment();
+        newEquipment.setName("新设备");
+        newEquipment.setLab(lab);
+
+        when(labRepository.findById(1L)).thenReturn(Optional.of(testLab));
+        when(codeGenerator.generateNextCode(1L)).thenReturn("LAB01-001");
+
+        DataIntegrityViolationException otherDive = new DataIntegrityViolationException(
+                "Column 'name' cannot be null");
+        when(persistenceHelper.saveInNewTransaction(any(Equipment.class), eq(testLab), eq("LAB01-001")))
+                .thenThrow(otherDive);
+
+        assertThrows(DataIntegrityViolationException.class,
+                () -> equipmentService.addEquipment(newEquipment),
+                "非 code 类 DIVE 不应被当作并发冲突重试，应直接抛出");
+
+        verify(codeGenerator, times(1)).generateNextCode(1L);
+        verify(persistenceHelper, times(1))
+                .saveInNewTransaction(any(Equipment.class), eq(testLab), eq("LAB01-001"));
     }
 
     @Test
@@ -136,12 +241,13 @@ class EquipmentServiceTest {
 
         when(labRepository.findById(999L)).thenReturn(Optional.empty());
 
-        assertThrows(RuntimeException.class, () -> {
+        assertThrows(BusinessException.class, () -> {
             equipmentService.addEquipment(newEquipment);
         });
 
         verify(labRepository).findById(999L);
-        verify(equipmentRepository, never()).save(any(Equipment.class));
+        verify(codeGenerator, never()).generateNextCode(anyLong());
+        verify(persistenceHelper, never()).saveInNewTransaction(any(), any(), any());
     }
 
     @Test

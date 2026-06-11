@@ -8,11 +8,16 @@ import com.example.lab.entity.Borrow;
 import com.example.lab.entity.Equipment;
 import com.example.lab.entity.Lab;
 import com.example.lab.entity.Repair;
+import com.example.lab.exception.BusinessException;
 import com.example.lab.repository.BorrowRepository;
 import com.example.lab.repository.EquipmentRepository;
 import com.example.lab.repository.LabRepository;
 import com.example.lab.repository.RepairRepository;
+import com.example.lab.util.EquipmentCodeGenerator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -20,6 +25,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -32,6 +38,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class EquipmentService {
+    private static final Logger logger = LoggerFactory.getLogger(EquipmentService.class);
+
     @Autowired
     private EquipmentRepository equipmentRepository;
     
@@ -44,17 +52,66 @@ public class EquipmentService {
     @Autowired
     private RepairRepository repairRepository;
 
-    @Transactional
+    @Autowired
+    private EquipmentCodeGenerator codeGenerator;
+
+    @Autowired
+    private EquipmentPersistenceHelper persistenceHelper;
+
+    /**
+     * 创建设备，带"唯一约束冲突→重试"机制。
+     *
+     * <h3>执行流程</h3>
+     * <ol>
+     *   <li>校验实验室存在；</li>
+     *   <li>调用 {@link EquipmentCodeGenerator#generateNextCode(Long)} 基于最大流水号选号；</li>
+     *   <li>在 <b>独立事务</b> 中执行 insert（避免重试时 EntityManager 被污染）；</li>
+     *   <li>若捕获 {@link DataIntegrityViolationException} 且消息包含 {@code code} 列唯一约束，
+     *       判定为并发撞号，重新调用 generateNextCode 选新号，再次尝试；</li>
+     *   <li>非 code 相关的 DIVE 或其他异常直接向上抛出；</li>
+     *   <li>达到 {@link EquipmentCodeGenerator#MAX_RETRY} 仍失败，抛出业务异常提示稍后再试。</li>
+     * </ol>
+     *
+     * <p>为什么把"单次尝试"放到 REQUIRES_NEW？
+     * 因为一旦 JPA flush 触发了数据库唯一约束异常，<b>当前事务和 EntityManager 都会被标记为回滚，</b>
+     * 继续在同一个事务里操作会抛 {@code UnexpectedRollbackException}。
+     * 每次重试开新事务，干净利落。</p>
+     */
     public Equipment addEquipment(Equipment equipment) {
-        Lab lab = labRepository.findById(equipment.getLab().getId()).orElseThrow(() -> new RuntimeException("Lab not found"));
-        equipment.setLab(lab);
-        
-        long count = equipmentRepository.findByLab_Id(lab.getId()).size();
-        String code = String.format("LAB%02d-%03d", lab.getId(), count + 1);
-        equipment.setCode(code);
-        equipment.setStatus("NORMAL");
-        
-        return equipmentRepository.save(equipment);
+        final Long labId = equipment.getLab().getId();
+        Lab lab = labRepository.findById(labId)
+                .orElseThrow(() -> new BusinessException(404, "实验室不存在，id=" + labId));
+
+        int attempt = 0;
+        while (true) {
+            attempt++;
+            String code = codeGenerator.generateNextCode(labId);
+
+            try {
+                return persistenceHelper.saveInNewTransaction(equipment, lab, code);
+            } catch (DataIntegrityViolationException dive) {
+                if (isCodeUniqueViolation(dive) && attempt < EquipmentCodeGenerator.MAX_RETRY) {
+                    logger.warn("设备编号唯一约束冲突，准备重试: labId={}, 冲突编号={}, 第 {} 次尝试/最多 {} 次",
+                            labId, code, attempt, EquipmentCodeGenerator.MAX_RETRY);
+                    continue;
+                }
+                if (attempt >= EquipmentCodeGenerator.MAX_RETRY) {
+                    logger.error("设备编号生成重试耗尽: labId={}, 最后尝试编号={}, 总尝试次数={}",
+                            labId, code, attempt);
+                    throw new BusinessException(500,
+                            "服务器繁忙，设备编号生成冲突多次，请稍后再试（连续 " + attempt + " 次冲突）");
+                }
+                throw dive;
+            }
+        }
+    }
+
+    private boolean isCodeUniqueViolation(DataIntegrityViolationException dive) {
+        if (dive == null || dive.getMessage() == null) return false;
+        String msg = dive.getMessage().toLowerCase();
+        boolean duplicate = msg.contains("duplicate") || msg.contains("unique") || msg.contains("constraint");
+        boolean codeField = msg.contains("code") || msg.contains("equipment_code");
+        return duplicate && codeField;
     }
 
     public Equipment updateEquipment(Equipment equipment) {
